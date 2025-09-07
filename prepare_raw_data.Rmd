@@ -1,0 +1,205 @@
+---
+title: "Hospital Inpatient Experience Survey 2024–2025: Initial Data Exploration"
+author: "Your Name"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+## 1. Packages
+
+```{r packages, warning =F, message=F}
+
+# Load packages
+library(readxl)
+library(janitor)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(lubridate)
+library(readr)
+library(writexl)
+
+```
+
+## 2. Import data
+
+```{r import}
+# Because the Excel file sits in the project root, we can read it directly
+survey_raw <- read_excel("hospital_survey_mother.xlsx")
+
+```
+
+
+
+```{r}
+# STEP 1: Filter by consent
+consent_col <- "Ông/bà có đồng ý tham gia nghiên cứu này không?"
+if (consent_col %in% names(survey_raw)) {
+  survey_clean <- survey_raw |>
+    filter(is.na(.data[[consent_col]]) | str_detect(.data[[consent_col]], "Có"))
+} else {
+  stop("Consent column not found in survey_raw!")
+}
+
+# STEP 2: Vietnamese → English mapping (with error if missing columns)
+vn_to_eng <- c(
+  "Dấu thời gian" = "timestamp",
+  "Ông/bà có đồng ý tham gia nghiên cứu này không?" = "consent",
+  "A1. Địa chỉ của ông/bà (ghi rõ quận/huyện, tỉnh)" = "address",
+  "A2. Giới tính của ông/bà" = "gender",
+  "A3. Năm sinh (năm dương lịch) của ông/bà (Ví dụ: 1975)" = "birth_year",
+  "A4. Trình độ học vấn của ông/bà" = "education",
+  "A5. Tình trạng hôn nhân của ông/bà" = "marital_status",
+  "A6. Tình trạng sống hiện tại của ông/bà" = "living_situation",
+  "A7. Nghề nghiệp của ông/bà" = "occupation",
+  "A8. Thu nhập bình quân hàng tháng của ông/bà" = "monthly_income",
+  "A9. Chi trả viện phí cho đợt điều trị này của ông/bà" = "payment_method",
+  "A10. Bệnh viện mà ông/bà điều trị trong đợt này" = "hospital",
+  "A11. Khoa lâm sàng mà ông/bà đã điều trị trong đợt này" = "department",
+  "A11.1. Tên khoa lâm sàng ông/bà đã điều trị trong đợt này?" = "department_specific",
+  "A12. Lý do nhập viện của ông/bà trong đợt điều trị này là gì?" = "admission_reason",
+  "A13. Số ngày điều trị nội trú trong đợt này của ông/bà (Ví dụ: 5 ngày)" = "length_of_stay",
+  "A14. Ngoài bệnh đang điều trị trong đợt này, ông/bà còn mắc bệnh mạn tính nào khác nữa không? (Ví dụ: Tăng huyết áp, Đái tháo đường, ...)" = "chronic_conditions",
+  "A15. Hiện tại, ông/bà có thẻ bảo hiểm y tế/bảo hiểm khác không?" = "has_insurance",
+  "A16. Ông/bà có sử dụng thẻ bảo hiểm y tế/bảo hiểm y tế khác để thanh toán cho đợt điều trị lần này không?" = "used_insurance",
+  "A17. Tình trạng khi xuất viện của ông/bà" = "discharge_status",
+  "A18. Hiện tại, ông/bà cảm nhận về tình trạng sức khoẻ thể chất của bản thân như thế nào?" = "physical_health_perception",
+  "A19. Hiện tại, ông/bà cảm nhận về tình trạng sức khoẻ tinh thần của bản thân như thế nào?" = "mental_health_perception",
+  "B1. Khi ông/bà có những câu hỏi quan trọng cần trao đổi với bác sĩ, ông/bà có nhận được câu trả lời dễ hiểu không?" = "doctor_communication",
+  "B2. Khi ông/bà có những câu hỏi quan trọng cần trao đổi với điều dưỡng, ông/bà có nhận được câu trả lời dễ hiểu không?" = "nurse_communication",
+  "B3. Trong suốt quá trình điều trị tại bệnh viện, ông/bà có thường xuyên nhận được các câu trả lời thống nhất từ bác sĩ và điều dưỡng không?" = "consistent_communication",
+  "B4. Trong quá trình trao đổi thông tin, bác sĩ có trao đổi rõ ràng với ông/bà không?" = "doctor_clarity",
+  "B5. Trong quá trình điều trị, nếu ông/bà cảm thấy lo lắng, bác sĩ có tư vấn cho ông/bà không?" = "doctor_anxiety_support",
+  "B6. Trong quá trình điều trị, nếu ông/bà cảm thấy lo lắng, điều dưỡng có tư vấn cho ông/bà không?" = "nurse_anxiety_support",
+  "B7. Ông/bà có muốn được tham gia vào quá trình ra quyết định liên quan tới kế hoạch điều trị của mình không?" = "treatment_decision_participation",
+  "B8. Trong quá trình điều trị tại bệnh viện, ông/bà có cảm thấy được nhân viên y tế đối xử với một thái độ tôn trọng không?" = "respectful_treatment",
+  "B9. Ông/bà có chia sẻ với nhân viên y tế những lo lắng của mình không?" = "sharing_concerns",
+  "B10. Trong quá trình điều trị, ông/bà có gặp phải cơn đau không?" = "experienced_pain",
+  "B10.1. Nếu có, ông/bà có nghĩ rằng nhân viên y tế đã cố gắng hết sức để giúp ông/bà kiểm soát cơn đau không?" = "pain_management",
+  "B11. Gia đình/người thân của ông/bà có cơ hội để trao đổi với bác sĩ về tình trạng sức khoẻ và quá trình điều trị của ông/bà không?" = "family_doctor_communication",
+  "B12. Gia đình/người thân của ông/bà có được cung cấp các thông tin cần thiết từ bác sĩ hoặc điều dưỡng để giúp ông/bà hồi phục không?" = "family_information_provision",
+  "B13. Ông/bà có được nhân viên y tế giải thích một cách rõ ràng về cách sử dụng của những loại thuốc ông/bà phải sử dụng ở nhà không?" = "medication_instructions",
+  "B14. Ông/bà có được nhân viên y tế giải thích về những tác dụng phụ cần theo dõi của các loại thuốc mà ông/bà phải sử dụng ở nhà không?" = "medication_side_effects",
+  "B15. Ông/bà có được nhân viên y tế giải thích về những dấu hiệu nguy hiểm liên quan đến tình trạng sức khoẻ hoặc việc điều trị cần theo dõi sau khi ra viện không?" = "discharge_warning_signs",
+  "C1. Ông/bà hãy chấm điểm từ 0 đến 10 để đánh giá chung về trải nghiệm tại bệnh viện mà ông/bà điều trị đợt này (0 điểm là trải nghiệm kém nhất, 10 điểm là trải nghiệm tốt nhất)" = "overall_experience_score",
+  "C2. Ông/bà có tin tưởng vào chất lượng dịch vụ của bệnh viện này hơn các bệnh viện khác không?" = "trust_in_hospital",
+  "C3. Ông/bà có sẵn sàng giới thiệu bệnh viện này cho người thân/bạn bè không?" = "willingness_to_recommend",
+  "C4. Ông/bà cảm thấy mức độ gắn bó của mình với bệnh viện này như thế nào?" = "hospital_loyalty",
+  "C5. Ông/bà có dự định quay lại bệnh viện này khi cần sử dụng dịch vụ y tế trong tương lai không?" = "future_use_intention",
+ "C6. Lý do chính khiến ông/bà chọn quay lại bệnh viện này là gì?\r\n(Câu hỏi nhiều lựa chọn)"  = "reasons_for_return"
+)
+
+# Check for missing columns for Vietnamese to English mapping
+missing_vn_cols <- setdiff(names(vn_to_eng), names(survey_clean))
+if (length(missing_vn_cols) > 0) {
+  stop(sprintf("Missing Vietnamese columns for English mapping:\n- %s", paste(missing_vn_cols, collapse = "\n- ")))
+}
+
+# Apply Vietnamese to English renaming
+for (vn_name in names(vn_to_eng)) {
+  eng_name <- vn_to_eng[[vn_name]]
+  names(survey_clean)[names(survey_clean) == vn_name] <- eng_name
+}
+
+# STEP 3: English → Ordered names mapping (for those columns, keep others as-is)
+eng_to_ordered <- c(
+  "address" = "a1_address",
+  "gender" = "a2_gender",
+  "birth_year" = "a3_birth_year",
+  "education" = "a4_education",
+  "marital_status" = "a5_marital_status",
+  "living_situation" = "a6_living_situation",
+  "occupation" = "a7_occupation",
+  "monthly_income" = "a8_monthly_income",
+  "payment_method" = "a9_payment_method",
+  "hospital" = "a10_hospital",
+  "department" = "a11_department",
+  "department_specific" = "a11.1_department_specific",
+  "admission_reason" = "a12_admission_reason",
+  "length_of_stay" = "a13_length_of_stay",
+  "chronic_conditions" = "a14_chronic_conditions",
+  "has_insurance" = "a15_has_insurance",
+  "used_insurance" = "a16_used_insurance",
+  "discharge_status" = "a17_discharge_status",
+  "physical_health_perception" = "a18_physical_health_perception",
+  "mental_health_perception" = "a19_mental_health_perception",
+  "doctor_communication" = "b1_doctor_communication",
+  "nurse_communication" = "b2_nurse_communication",
+  "consistent_communication" = "b3_consistent_communication",
+  "doctor_clarity" = "b4_doctor_clarity",
+  "doctor_anxiety_support" = "b5_doctor_anxiety_support",
+  "nurse_anxiety_support" = "b6_nurse_anxiety_support",
+  "treatment_decision_participation" = "b7_treatment_decision_participation",
+  "respectful_treatment" = "b8_respectful_treatment",
+  "sharing_concerns" = "b9_sharing_concerns",
+  "experienced_pain" = "b10_experienced_pain",
+  "pain_management" = "b10.1_pain_management",
+  "family_doctor_communication" = "b11_family_doctor_communication",
+  "family_information_provision" = "b12_family_information_provision",
+  "medication_instructions" = "b13_medication_instructions",
+  "medication_side_effects" = "b14_medication_side_effects",
+  "discharge_warning_signs" = "b15_discharge_warning_signs",
+  "overall_experience_score" = "c1_overall_experience_score",
+  "trust_in_hospital" = "c2_trust_in_hospital",
+  "willingness_to_recommend" = "c3_willingness_to_recommend",
+  "hospital_loyalty" = "c4_hospital_loyalty",
+  "future_use_intention" = "c5_future_use_intention",
+  "reasons_for_return" = "c6_reasons_for_return"
+)
+
+# Check for missing columns for English to Ordered mapping
+missing_eng_cols <- setdiff(names(eng_to_ordered), names(survey_clean))
+if (length(missing_eng_cols) > 0) {
+  stop(sprintf("Missing English columns for ordered mapping:\n- %s", paste(missing_eng_cols, collapse = "\n- ")))
+}
+
+# Apply English to Ordered renaming
+for (eng_name in names(eng_to_ordered)) {
+  ordered_name <- eng_to_ordered[[eng_name]]
+  names(survey_clean)[names(survey_clean) == eng_name] <- ordered_name
+}
+
+# STEP 4: Set desired column order (keep any extras at end)
+desired_cols <- c(
+  "timestamp",
+  "age", "age_group", "a2_gender", "a4_education", "a5_marital_status", "a6_living_situation",
+  "a7_occupation", "a8_monthly_income",
+  "a10_hospital", "a11_department", "a12_admission_reason", "a13_length_of_stay", "los_category",
+  "a14_chronic_conditions", "a15_has_insurance", "a16_used_insurance", "a9_payment_method",
+  "a17_discharge_status", "a18_physical_health_perception", "a19_mental_health_perception",
+  "b1_doctor_communication", "b2_nurse_communication", "b3_consistent_communication",
+  "b4_doctor_clarity", "b5_doctor_anxiety_support", "b6_nurse_anxiety_support",
+  "b7_treatment_decision_participation", "b8_respectful_treatment", "b9_sharing_concerns",
+  "b10_experienced_pain", "b10.1_pain_management",
+  "b11_family_doctor_communication", "b12_family_information_provision",
+  "b13_medication_instructions", "b14_medication_side_effects", "b15_discharge_warning_signs",
+  "c1_overall_experience_score", "c2_trust_in_hospital", "c3_willingness_to_recommend",
+  "c4_hospital_loyalty", "c5_future_use_intention", "c6_reasons_for_return",
+  "communication_score"
+)
+
+# Only select columns that actually exist (to avoid errors if optional cols missing)
+ordered_cols <- c(desired_cols[desired_cols %in% names(survey_clean)],
+                  setdiff(names(survey_clean), desired_cols))
+survey_clean <- survey_clean[, ordered_cols]
+```
+
+
+
+
+```{r, eval = T}
+write_xlsx(survey_clean, "survey_final_cleaned_July_18th_5pm.xlsx")
+```
+
+
+```{r}
+
+```
+
+
+
