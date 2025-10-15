@@ -1,0 +1,931 @@
+---
+title: "Hospital Survey Data Analysis"
+author: "Đam Mê Nghiên Cứu"
+date: "`r Sys.Date()`"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r, include = F, warning =F}
+library(flextable)
+library(performance)
+library(pacman)
+p_load(forcats)
+```
+
+```{r, include = FALSE}
+knitr:: opts_chunk$set(echo = FALSE, warning = FALSE, mesage = FALSE, comment = "##", 
+                       dpi = 4*72, fig.width = 8.5, fig.height = 4.5)
+``` 
+
+```{r setup cool, include = FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+```
+
+```{r run_data_preparation, include = FALSE}
+# Run the data preparation script
+rmarkdown::render("prepare_raw_data.Rmd")
+```
+
+# Table 1: Baseline Demographic Characteristics
+```{r create_baseline_table}
+# Create baseline characteristics table
+baseline_table <- data1_processed %>%
+  select(
+    age,
+    age_category,
+    A2_gender,
+    A4_education_level,
+    A5_marital_status,
+    A6_living_situation,
+    A7_occupation_cleaned,
+    A8_monthly_income,
+    A9_payment_method,
+    A10_hospital_treated,
+    A11_1_clinical_department_cleaned,
+    A12_0_admission_reason_code,
+    length_of_stay_clean,
+    A14_other_chronic_disease,
+    A15_health_insurance,
+    A16_used_insurance_for_payment,
+    A17_discharge_condition,
+    A18_physical_health_perception,
+    A19_mental_health_perception,
+    C1_overall_hospital_experience_score
+  ) %>%
+  tbl_summary(
+    by = age_category,
+    label = list(
+      age ~ "Age (years)",
+      A2_gender ~ "A2 - Gender",
+      A4_education_level ~ "A4 - Education Level", 
+      A5_marital_status ~ "A5 - Marital Status",
+      A6_living_situation ~ "A6 - Living Situation",
+      A7_occupation_cleaned ~ "A7 - Occupation",
+      A8_monthly_income ~ "A8 - Monthly Income",
+      A9_payment_method ~ "A9 - Payment Method",
+      A10_hospital_treated ~ "A10 - Hospital",
+      A11_1_clinical_department_cleaned ~ "A11 - Department",
+      A12_0_admission_reason_code ~ "A12 - Admission Reason",
+      length_of_stay_clean ~ "Length of Stay (days)",
+      A14_other_chronic_disease ~ "A14 - Other Chronic Disease",
+      A15_health_insurance ~ "A15 - Health Insurance",
+      A16_used_insurance_for_payment ~ "A16 - Used Insurance for Payment",
+      A17_discharge_condition ~ "A17 - Discharge Condition",
+      A18_physical_health_perception ~ "A18 - Physical Health Perception",
+      A19_mental_health_perception ~ "A19 - Mental Health Perception",
+      C1_overall_hospital_experience_score ~ "C1 - Overall Experience Score (0-10)"
+    ),
+    statistic = list(
+      all_continuous() ~ "{median} ({p25}, {p75})",
+      all_categorical() ~ "{n} ({p}%)"
+    ),
+    missing_text = "Missing",
+    type = list(
+      C1_overall_hospital_experience_score ~ "continuous"
+    )
+  ) %>%
+  add_overall() %>%
+  bold_labels() %>%
+  modify_header(
+    label = "**Characteristic**",
+    stat_0 = "**Overall**\nN = {N}"
+  ) %>%
+  modify_spanning_header(c("stat_1", "stat_2", "stat_3", "stat_4") ~ "**Age Group**")
+
+# Convert to gt table with styling
+final_table <- baseline_table %>%
+  as_gt() %>%
+  tab_options(
+    table.font.names = "Arial",
+    table.font.size = 11,
+    row.striping.background_color = "#F8F9FA",
+    table.border.top.style = "solid",
+    table.border.top.width = px(2),
+    table.border.top.color = "black",
+    table.border.bottom.style = "solid", 
+    table.border.bottom.width = px(2),
+    table.border.bottom.color = "black",
+    column_labels.border.top.style = "solid",
+    column_labels.border.top.width = px(2),
+    column_labels.border.top.color = "black",
+    column_labels.border.bottom.style = "solid",
+    column_labels.border.bottom.width = px(1),
+    column_labels.border.bottom.color = "black"
+  ) %>%
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = cells_column_labels()
+  ) %>%
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = cells_title()
+  ) %>%
+  tab_footnote(
+    footnote = "Data presented as median (IQR) for continuous variables and n (%) for categorical variables.",
+    locations = cells_title()
+  )
+```
+
+```{r display_table}
+final_table
+```
+
+\pagebreak
+# Table 1: Adjusted Odds Ratios for Positive Hospital Experience - Core Communication Model
+
+```{r model1_fit}
+# Filter data for complete cases in Model 1 variables
+model1_data <- data1_processed %>%
+  filter(!is.na(c1_overall_experience_binary),
+         !is.na(B1_doctor_clear_answers),
+         !is.na(B2_nurse_clear_answers), 
+         !is.na(B4_doctor_clear_communication),
+         !is.na(B8_respectful_treatment_by_staff))
+
+# Model 1: Core Communication Model
+model1 <- glm(c1_overall_experience_binary ~ 
+              B1_doctor_clear_answers + 
+                B2_nurse_clear_answers + 
+                B3_consistent_staff_answers + 
+                B4_doctor_clear_communication + 
+                B5_doctor_anxiety_counseling + 
+                B6_nurse_anxiety_counseling + 
+                B7_want_treatment_decision_participation + 
+                B8_respectful_treatment_by_staff +
+                B9_shared_concerns_with_staff + 
+                B10_experienced_pain + 
+                B10_1_staff_helped_pain_control +
+                B11_family_communication_with_doctor + 
+                B12_family_received_recovery_information + 
+                B13_clear_medication_instructions + 
+                B14_medication_side_effects_explained + 
+                B15_warning_signs_explained, 
+              family = binomial, 
+              data = model1_data)
+
+# Create professional flextable for Model 1
+model1_table <- tbl_regression(
+  model1,
+  exponentiate = TRUE,
+  label = list(
+    B1_doctor_clear_answers ~ "B1 - Doctor clear answers",
+    B2_nurse_clear_answers ~ "B2 - Nurse clear answers", 
+    B4_doctor_clear_communication ~ "B4 - Doctor clear communication",
+    B8_respectful_treatment_by_staff ~ "B8 - Respectful treatment by staff", 
+    B3_consistent_staff_answers ~ "B3 - Consistent staff answers ", 
+    B4_doctor_clear_communication ~ "B4 - Doctor clear communication", 
+    B5_doctor_anxiety_counseling ~ "B5 - Doctor anxiety counseling", 
+    B6_nurse_anxiety_counseling ~ "B6 - Nurse anxiety counseling", 
+    B7_want_treatment_decision_participation ~"B7 - Treatment decision participation", 
+    B8_respectful_treatment_by_staff ~ "B8 - Respectful treatment by staff", 
+    B9_shared_concerns_with_staff ~ "B9 - Shared concerns with staff", 
+    B10_experienced_pain ~ "B10 - Experienced pain", 
+    B10_1_staff_helped_pain_control ~ "B10_1 - Staff helped pain control", 
+    B11_family_communication_with_doctor ~ "B11 - Family communication with doctor", 
+    B12_family_received_recovery_information ~ "B12 - Family received recovery information", 
+    B13_clear_medication_instructions ~ "B13 - Clear medication instructions", 
+    B14_medication_side_effects_explained ~ "B14 - Medication side effects explained", 
+    B15_warning_signs_explained ~ "B15 - Warning signs explained"),
+  estimate_fun = function(x) style_ratio(x, digits = 3),
+  pvalue_fun = function(x) style_pvalue(x, digits = 3)
+) %>%
+  bold_p(t = 0.05) %>%
+  modify_header(
+    label = "**Variable**",
+    estimate = "**Adjusted OR**", 
+    ci = "**95% CI**",
+    p.value = "**p-value**"
+  )
+
+# Convert to flextable with professional styling
+model1_flex <- model1_table %>%
+  as_flex_table() %>%
+  theme_vanilla() %>%
+  bg(part = "header", bg = "#D9D9D9") %>%
+  color(part = "header", color = "black") %>%
+  bold(part = "header") %>%
+  align(part = "header", align = "center") %>%
+  align(j = c("estimate", "ci", "p.value"), align = "center", part = "body") %>%
+  align(j = "label", align = "left", part = "body") %>%
+  bg(i = seq(2, nrow(model1_table$table_body), by = 2), bg = "#F2F2F2", part = "body") %>%
+  width(j = "label", width = 2.8) %>%
+  width(j = "estimate", width = 1.0) %>%
+  width(j = "ci", width = 1.5) %>%
+  width(j = "p.value", width = 1.0) %>%
+  add_footer_lines(paste0("OR = Odds Ratio; CI = Confidence Interval; N = ", nobs(model1))) %>%
+  fontsize(part = "footer", size = 9) %>%
+  italic(part = "footer") %>%
+  autofit()
+
+model1_flex
+```
+
+\pagebreak
+
+# Table 2: Adjusted Odds Ratios for Positive Hospital Experience - Enhanced Model with Patient Characteristics
+
+```{r model_2 with some characteristic}
+# Filter data for complete cases in Model 2 variables
+model2_data <- data1_processed %>%
+  filter(!is.na(c1_overall_experience_binary),
+         !is.na(B1_doctor_clear_answers),
+         !is.na(B2_nurse_clear_answers), 
+         !is.na(B4_doctor_clear_communication),
+         !is.na(B8_respectful_treatment_by_staff),
+         !is.na(age_category),
+         !is.na(A2_gender),
+         !is.na(length_of_stay_clean),
+         !is.na(A14_other_chronic_disease),
+         !is.na(A17_discharge_condition))
+
+# Model 2: Core Communication + Patient Characteristics
+model2 <- glm(c1_overall_experience_binary ~ 
+              B1_doctor_clear_answers + 
+              B2_nurse_clear_answers + 
+              B4_doctor_clear_communication + 
+              B8_respectful_treatment_by_staff +
+              age_category + 
+              A2_gender + 
+              length_of_stay_clean + 
+              A14_other_chronic_disease + 
+              A17_discharge_condition,
+              family = binomial, 
+              data = model2_data)
+
+# Create professional flextable for Model 2
+model2_table <- tbl_regression(
+  model2,
+  exponentiate = TRUE,
+  label = list(
+    B1_doctor_clear_answers ~ "B1 - Doctor clear answers",
+    B2_nurse_clear_answers ~ "B2 - Nurse clear answers", 
+    B4_doctor_clear_communication ~ "B4 - Doctor clear communication",
+    B8_respectful_treatment_by_staff ~ "B8 - Respectful treatment by staff",
+    age_category ~ "Age category",
+    A2_gender ~ "A2 - Gender",
+    length_of_stay_clean ~ "Length of stay (per day)",
+    A14_other_chronic_disease ~ "A14 - Other chronic disease",
+    A17_discharge_condition ~ "A17 - Discharge condition"
+  ),
+  estimate_fun = function(x) style_ratio(x, digits = 3),
+  pvalue_fun = function(x) style_pvalue(x, digits = 3)
+) %>%
+  bold_p(t = 0.05) %>%
+  modify_header(
+    label = "**Variable**",
+    estimate = "**Adjusted OR**", 
+    ci = "**95% CI**",
+    p.value = "**p-value**"
+  )
+
+# Convert to flextable with professional styling
+model2_flex <- model2_table %>%
+  as_flex_table() %>%
+  theme_vanilla() %>%
+  bg(part = "header", bg = "#D9D9D9") %>%
+  color(part = "header", color = "black") %>%
+  bold(part = "header") %>%
+  align(part = "header", align = "center") %>%
+  align(j = c("estimate", "ci", "p.value"), align = "center", part = "body") %>%
+  align(j = "label", align = "left", part = "body") %>%
+  bg(i = seq(2, nrow(model2_table$table_body), by = 2), bg = "#F2F2F2", part = "body") %>%
+  width(j = "label", width = 2.8) %>%
+  width(j = "estimate", width = 1.0) %>%
+  width(j = "ci", width = 1.5) %>%
+  width(j = "p.value", width = 1.0) %>%
+  add_footer_lines(paste0("OR = Odds Ratio; CI = Confidence Interval; N = ", nobs(model2))) %>%
+  fontsize(part = "footer", size = 9) %>%
+  italic(part = "footer") %>%
+  width(j = 1, width = 2.8) %>%
+  width(j = 2, width = 1.0) %>% 
+  width(j = 3, width = 1.5) %>%
+  width(j = 4, width = 1.0)
+
+model2_flex
+```
+
+\pagebreak
+
+# Table 3: Adjusted Odds Ratios for Positive Hospital Experience - Complete Model with All Patient Experience Variables
+
+```{r}
+# Filter data for complete cases in Model 3 variables
+model3_data <- data1_processed %>%
+  filter(!is.na(c1_overall_experience_binary),
+         !is.na(B1_doctor_clear_answers),
+         !is.na(B2_nurse_clear_answers),
+         !is.na(B3_consistent_staff_answers),
+         !is.na(B4_doctor_clear_communication),
+         !is.na(B5_doctor_anxiety_counseling),
+         !is.na(B6_nurse_anxiety_counseling),
+         !is.na(B8_respectful_treatment_by_staff),
+         !is.na(B10_experienced_pain),
+         !is.na(B13_clear_medication_instructions),
+         !is.na(B14_medication_side_effects_explained),
+         !is.na(B15_warning_signs_explained),
+         !is.na(age_category),
+         !is.na(A2_gender),
+         !is.na(length_of_stay_clean),
+         !is.na(A14_other_chronic_disease),
+         !is.na(A17_discharge_condition),
+         !is.na(A11_1_clinical_department_cleaned))
+
+# Model 3: Full Model with All B Variables + Patient Characteristics
+model3 <- glm(c1_overall_experience_binary ~ 
+              B1_doctor_clear_answers + 
+              B2_nurse_clear_answers + 
+              B3_consistent_staff_answers + 
+              B4_doctor_clear_communication + 
+              B5_doctor_anxiety_counseling + 
+              B6_nurse_anxiety_counseling +
+              B8_respectful_treatment_by_staff + 
+              B10_experienced_pain +
+              B13_clear_medication_instructions + 
+              B14_medication_side_effects_explained +
+              B15_warning_signs_explained +
+              age_category + 
+              A2_gender + 
+              length_of_stay_clean + 
+              A14_other_chronic_disease + 
+              A17_discharge_condition +
+              A11_1_clinical_department_cleaned,
+              family = binomial, 
+              data = model3_data)
+
+# Create professional flextable for Model 3
+model3_table <- tbl_regression(
+  model3,
+  exponentiate = TRUE,
+  label = list(
+    B1_doctor_clear_answers ~ "B1 - Doctor clear answers",
+    B2_nurse_clear_answers ~ "B2 - Nurse clear answers",
+    B3_consistent_staff_answers ~ "B3 - Consistent staff answers",
+    B4_doctor_clear_communication ~ "B4 - Doctor clear communication",
+    B5_doctor_anxiety_counseling ~ "B5 - Doctor anxiety counseling",
+    B6_nurse_anxiety_counseling ~ "B6 - Nurse anxiety counseling",
+    B8_respectful_treatment_by_staff ~ "B8 - Respectful treatment by staff",
+    B10_experienced_pain ~ "B10 - Experienced pain",
+    B13_clear_medication_instructions ~ "B13 - Clear medication instructions",
+    B14_medication_side_effects_explained ~ "B14 - Medication side effects explained",
+    B15_warning_signs_explained ~ "B15 - Warning signs explained",
+    age_category ~ "Age category",
+    A2_gender ~ "A2 - Gender",
+    length_of_stay_clean ~ "Length of stay (per day)",
+    A14_other_chronic_disease ~ "A14 - Other chronic disease",
+    A17_discharge_condition ~ "A17 - Discharge condition",
+    A11_1_clinical_department_cleaned ~ "A11 - Clinical department"
+  ),
+  estimate_fun = function(x) style_ratio(x, digits = 3),
+  pvalue_fun = function(x) style_pvalue(x, digits = 3)
+) %>%
+  bold_p(t = 0.05) %>%
+  modify_header(
+    label = "**Variable**",
+    estimate = "**Adjusted OR**", 
+    ci = "**95% CI**",
+    p.value = "**p-value**"
+  )
+
+# Convert to flextable with professional styling
+model3_flex <- model3_table %>%
+  as_flex_table() %>%
+  theme_vanilla() %>%
+  bg(part = "header", bg = "#D9D9D9") %>%
+  color(part = "header", color = "black") %>%
+  bold(part = "header") %>%
+  align(part = "header", align = "center") %>%
+  align(j = c("estimate", "ci", "p.value"), align = "center", part = "body") %>%
+  align(j = "label", align = "left", part = "body") %>%
+  bg(i = seq(2, nrow(model3_table$table_body), by = 2), bg = "#F2F2F2", part = "body") %>%
+  width(j = "label", width = 2.8) %>%
+  width(j = "estimate", width = 1.0) %>%
+  width(j = "ci", width = 1.5) %>%
+  width(j = "p.value", width = 1.0) %>%
+  add_footer_lines(paste0("OR = Odds Ratio; CI = Confidence Interval; N = ", nobs(model3))) %>%
+  fontsize(part = "footer", size = 9) %>%
+  italic(part = "footer") %>%
+  width(j = 1, width = 2.8) %>%
+  width(j = 2, width = 1.0) %>% 
+  width(j = 3, width = 1.5) %>%
+  width(j = 4, width = 1.0)
+
+model3_flex
+```
+```{r}
+check_model(model3)
+```
+
+# Same predictor as Model 3, but change response variable to continuous outcome (C1_overall_hospital_experience_score)
+
+```{r}
+# Filter data for complete cases in Model 4 variables (using continuous outcome)
+model4_data <- data1_processed %>%
+  filter(!is.na(C1_overall_hospital_experience_score),
+         !is.na(B1_doctor_clear_answers),
+         !is.na(B2_nurse_clear_answers),
+         !is.na(B3_consistent_staff_answers),
+         !is.na(B4_doctor_clear_communication),
+         !is.na(B5_doctor_anxiety_counseling),
+         !is.na(B6_nurse_anxiety_counseling),
+         !is.na(B8_respectful_treatment_by_staff),
+         !is.na(B10_experienced_pain),
+         !is.na(B13_clear_medication_instructions),
+         !is.na(B14_medication_side_effects_explained),
+         !is.na(B15_warning_signs_explained),
+         !is.na(age_category),
+         !is.na(A2_gender),
+         !is.na(length_of_stay_clean),
+         !is.na(A14_other_chronic_disease),
+         !is.na(A17_discharge_condition),
+         !is.na(A11_1_clinical_department_cleaned))
+
+# Model 4: Linear Regression with Continuous Overall Experience Score
+model4 <- lm(C1_overall_hospital_experience_score ~ 
+             B1_doctor_clear_answers + 
+             B2_nurse_clear_answers + 
+             B3_consistent_staff_answers + 
+             B4_doctor_clear_communication + 
+             B5_doctor_anxiety_counseling + 
+             B6_nurse_anxiety_counseling +
+             B8_respectful_treatment_by_staff + 
+             B10_experienced_pain +
+             B13_clear_medication_instructions + 
+             B14_medication_side_effects_explained +
+             B15_warning_signs_explained +
+             age_category + 
+             A2_gender + 
+             length_of_stay_clean + 
+             A14_other_chronic_disease + 
+             A17_discharge_condition +
+             A11_1_clinical_department_cleaned,
+             data = model4_data)
+
+# Create professional flextable for Model 4
+model4_table <- tbl_regression(
+  model4,
+  label = list(
+    B1_doctor_clear_answers ~ "B1 - Doctor clear answers",
+    B2_nurse_clear_answers ~ "B2 - Nurse clear answers",
+    B3_consistent_staff_answers ~ "B3 - Consistent staff answers",
+    B4_doctor_clear_communication ~ "B4 - Doctor clear communication",
+    B5_doctor_anxiety_counseling ~ "B5 - Doctor anxiety counseling",
+    B6_nurse_anxiety_counseling ~ "B6 - Nurse anxiety counseling",
+    B8_respectful_treatment_by_staff ~ "B8 - Respectful treatment by staff",
+    B10_experienced_pain ~ "B10 - Experienced pain",
+    B13_clear_medication_instructions ~ "B13 - Clear medication instructions",
+    B14_medication_side_effects_explained ~ "B14 - Medication side effects explained",
+    B15_warning_signs_explained ~ "B15 - Warning signs explained",
+    age_category ~ "Age category",
+    A2_gender ~ "A2 - Gender",
+    length_of_stay_clean ~ "Length of stay (per day)",
+    A14_other_chronic_disease ~ "A14 - Other chronic disease",
+    A17_discharge_condition ~ "A17 - Discharge condition",
+    A11_1_clinical_department_cleaned ~ "A11 - Clinical department"
+  ),
+  estimate_fun = function(x) style_number(x, digits = 3),
+  pvalue_fun = function(x) style_pvalue(x, digits = 3)
+) %>%
+  bold_p(t = 0.05) %>%
+  modify_header(
+    label = "**Variable**",
+    estimate = "**Beta Coefficient**", 
+    ci = "**95% CI**",
+    p.value = "**p-value**"
+  )
+
+# Convert to flextable with professional styling
+model4_flex <- model4_table %>%
+  as_flex_table() %>%
+  theme_vanilla() %>%
+  bg(part = "header", bg = "#D9D9D9") %>%
+  color(part = "header", color = "black") %>%
+  bold(part = "header") %>%
+  align(part = "header", align = "center") %>%
+  align(j = c("estimate", "ci", "p.value"), align = "center", part = "body") %>%
+  align(j = "label", align = "left", part = "body") %>%
+  bg(i = seq(2, nrow(model4_table$table_body), by = 2), bg = "#F2F2F2", part = "body") %>%
+  width(j = "label", width = 2.8) %>%
+  width(j = "estimate", width = 1.2) %>%
+  width(j = "ci", width = 1.5) %>%
+  width(j = "p.value", width = 1.0) %>%
+  add_footer_lines(paste0("Beta = Regression Coefficient; CI = Confidence Interval; N = ", nobs(model4), 
+                          "; R² = ", round(summary(model4)$r.squared, 3))) %>%
+  fontsize(part = "footer", size = 9) %>%
+  italic(part = "footer") %>%
+  width(j = 1, width = 2.8) %>%
+  width(j = 2, width = 1.2) %>% 
+  width(j = 3, width = 1.5) %>%
+  width(j = 4, width = 1.0)
+
+model4_flex
+```
+
+```{r}
+library(MASS)
+# Fit the full model 
+full.model <- lm(C1_overall_hospital_experience_score ~ B1_doctor_clear_answers + 
+             B2_nurse_clear_answers + 
+             B3_consistent_staff_answers + 
+             B4_doctor_clear_communication + 
+             B5_doctor_anxiety_counseling + 
+             B6_nurse_anxiety_counseling +
+             B8_respectful_treatment_by_staff + 
+             B10_experienced_pain +
+             B13_clear_medication_instructions + 
+             B14_medication_side_effects_explained +
+             B15_warning_signs_explained +
+             age_category + 
+             A2_gender + 
+             length_of_stay_clean + 
+             A14_other_chronic_disease + 
+             A17_discharge_condition +
+             A11_1_clinical_department_cleaned, data = data1_processed)
+
+# Stepwise regression model
+step.model <- stepAIC(full.model, direction = "both", 
+                      trace = FALSE)
+summary(step.model)
+
+```
+
+```{r, eval = FALSE}
+models <- regsubsets(C1_overall_hospital_experience_score ~ B1_doctor_clear_answers + 
+             B2_nurse_clear_answers + 
+             B3_consistent_staff_answers + 
+             B4_doctor_clear_communication + 
+             B5_doctor_anxiety_counseling + 
+             B6_nurse_anxiety_counseling +
+             B8_respectful_treatment_by_staff + 
+             B10_experienced_pain +
+             B13_clear_medication_instructions + 
+             B14_medication_side_effects_explained +
+             B15_warning_signs_explained +
+             age_category + 
+             A2_gender + 
+             length_of_stay_clean + 
+             A14_other_chronic_disease + 
+             A17_discharge_condition +
+             A11_1_clinical_department_cleaned, data = data1_processed, nvmax = 5,
+                     method = "seqrep")
+summary(models)
+```
+
+```{r, eval = FALSE}
+# Initialize a model with all predictors
+both_model <- lm(C1_overall_hospital_experience_score ~ B1_doctor_clear_answers + 
+             B2_nurse_clear_answers + 
+             B3_consistent_staff_answers + 
+             B4_doctor_clear_communication + 
+             B5_doctor_anxiety_counseling + 
+             B6_nurse_anxiety_counseling +
+             B8_respectful_treatment_by_staff + 
+             B10_experienced_pain +
+             B13_clear_medication_instructions + 
+             B14_medication_side_effects_explained +
+             B15_warning_signs_explained +
+             age_category + 
+             A2_gender + 
+             length_of_stay_clean + 
+             A14_other_chronic_disease + 
+             A17_discharge_condition +
+             A11_1_clinical_department_cleaned, data = data1_processed)
+
+# Both-direction stepwise regression
+both_model <- step(both_model, direction = "both", trace = 0)
+```
+
+```{r, eval = FALSE}
+#model5
+model5 <- lm(C1_overall_hospital_experience_score ~ 
+               age_category + A2_gender +
+             length_of_stay_clean + A14_other_chronic_disease + 
+             A17_discharge_condition, data = data1_processed)
+
+               
+```
+
+```{r}
+#model6
+model6 <- lm(C1_overall_hospital_experience_score ~ 
+               A2_gender + 
+               age_category + 
+               A4_education_level +
+               A5_marital_status +
+               A6_living_situation + 
+               A7_0_occupation_code + 
+               A8_monthly_income + 
+               A9_payment_method + 
+               A10_hospital_treated + 
+               A11_1_clinical_department_code + 
+               A12_0_admission_reason_code + 
+               length_of_stay_clean + 
+               A14_other_chronic_disease +  
+               A15_health_insurance + 
+               A16_used_insurance_for_payment + 
+               A17_discharge_condition + 
+               A18_physical_health_perception + 
+               A19_mental_health_perception + 
+               C2_trust_hospital_quality + 
+               C3_would_recommend_hospital + 
+               C4_hospital_loyalty + 
+               C5_intention_to_return, 
+             data = data1_processed)
+               
+par(mfrow = c(2,2))
+plot(model6)
+```
+
+```{r}
+model7 <- lm(C1_overall_hospital_experience_score ~ 
+               A2_gender + 
+               A4_education_level +
+               # A5_marital_status +
+               # A6_living_situation + 
+               A7_occupation_broad +
+               A9_payment_method_group + 
+               # A10_hospital_treated + 
+               A12_0_admission_reason_fix + 
+               length_of_stay_clean + 
+               A16_used_insurance_for_payment 
+               # A17_discharge_condition + 
+               # A18_physical_health_perception + 
+               # A19_mental_health_perception +
+               # C2_trust_hospital_quality + 
+               # C3_would_recommend_hospital + 
+               # C4_hospital_loyalty + 
+               # C5_intention_to_return
+               , data = data1_processed)
+               
+par(mfrow = c(2,2))
+plot(model7)
+```
+
+```{r}
+x_var <- c("A2_gender",  
+               "age_category",  
+               "A4_education_level", 
+               "A5_marital_status", 
+               "A6_living_situation",  
+               "A7_0_occupation_code",  
+               "A8_monthly_income", 
+               "A9_payment_method", 
+               "A10_hospital_treated",  
+               "A11_1_clinical_department_code", 
+               "A12_0_admission_reason_code", 
+               "length_of_stay_clean", 
+               "A14_other_chronic_disease",  
+               "A15_health_insurance", 
+               "A16_used_insurance_for_payment", 
+               "A17_discharge_condition", 
+               "A18_physical_health_perception",  
+               "A19_mental_health_perception", 
+               "C2_trust_hospital_quality", 
+               "C3_would_r3ecommend_hospital", 
+               "C4_hospital_loyalty",
+               "C5_intention_to_return") 
+
+y_var <- "C1_overall_hospital_experience_score" 
+
+results <- lapply(x_var, function(v) {
+    f <- as.formula(paste(y_var, "~", v))
+    tidy(lm(f, data = data1_processed)) %>%
+        mutate(variable = v)
+})
+
+results_df <- bind_rows(results) 
+
+results_clean <- results_df %>%
+  filter(term != "(Intercept)") %>%
+  transmute(
+    variable,
+    estimate = round(estimate, 3),
+    std_error = round(std.error, 3),
+    statistic = round(statistic, 3),
+    p_value = round(p.value, 3)
+  )
+
+results_clean
+
+
+```
+
+```{r fix_var}
+data1_processed <- data1_processed %>%
+  mutate(
+    A12_0_admission_reason_fix = case_when(
+      A12_0_admission_reason_code %in% c("Dịch vụ sản khoa", "Điều trị hoá chất", "Khác") ~ "Khác",
+      A12_0_admission_reason_code == "Điều trị bệnh mạn tính" ~ "Điều trị bệnh mạn tính",
+      A12_0_admission_reason_code == "Điều trị đợt cấp của bệnh" ~ "Điều trị đợt cấp của bệnh",
+      A12_0_admission_reason_code == "Nhập viện cấp cứu" ~ "Nhập viện cấp cứu",
+      A12_0_admission_reason_code == "Phẫu thuật/thủ thuật" ~ "Phẫu thuật/thủ thuật",
+      TRUE ~ NA_character_
+    )
+  )
+
+data1_processed <- data1_processed %>%
+  mutate (A9_payment_method_group = case_when(
+    A9_payment_method %in% c("Được BHXH chi trả", "Tự chi trả được") ~ "Không gặp vấn đề với việc chi trả viện phí", 
+    A9_payment_method %in% c("Phải vay mượn", "Vừa được BHXH chi trả và vừa vay mượn") ~ "Gặp khó khăn với việc chi trả viện phí", 
+    TRUE ~ NA_character_))
+
+```
+
+```{r check_model_fix}
+cooksD <- cooks.distance(model)
+influential_points <- which(cooksD > (4/length(cooksD)))
+influential_points
+
+std_resid <- rstandard(model7)
+outliers_resid <- which(abs(std_resid) > 2)   # Ngưỡng 2 hoặc 3
+outliers_resid
+
+leverage <- hatvalues(model7)
+cutoff <- 2 * (length(coef(model7))) / nrow(data1_processed)
+outliers_leverage <- which(leverage > cutoff)
+outliers_leverage
+
+p_load(car)
+influenceIndexPlot(model7, id.n = 5)   # Vẽ các chỉ số ảnh hưởng
+influencePlot(model7, id.n = 5)
+```
+
+```{r model_A}
+model_A <- lm(C1_overall_hospital_experience_score ~ 
+               A2_gender + 
+               A4_education_level +
+               # A5_marital_status +
+               # A6_living_situation + 
+               A7_occupation_broad +
+               A9_payment_method_group + 
+               # A10_hospital_treated + 
+               A12_0_admission_reason_fix + 
+               length_of_stay_clean 
+               # A16_used_insurance_for_payment 
+               # A17_discharge_condition + 
+               # A18_physical_health_perception + 
+               # A19_mental_health_perception +
+               # C2_trust_hospital_quality + 
+               # C3_would_recommend_hospital + 
+               # C4_hospital_loyalty + 
+               # C5_intention_to_return
+               , data = data1_processed)
+
+model_A_sensitivity <- lm(C1_overall_hospital_experience_score ~ 
+               A2_gender + 
+               A4_education_level +
+               # A5_marital_status +
+               # A6_living_situation + 
+               A7_occupation_broad +
+               A9_payment_method_group + 
+               # A10_hospital_treated + 
+               A12_0_admission_reason_fix + 
+               length_of_stay_clean
+               # A16_used_insurance_for_payment 
+               # A17_discharge_condition + 
+               # A18_physical_health_perception + 
+               # A19_mental_health_perception +
+               # C2_trust_hospital_quality + 
+               # C3_would_recommend_hospital + 
+               # C4_hospital_loyalty + 
+               # C5_intention_to_return
+               , data = data1_processed[-c(1463, 3201, 3229, 3248), ])
+               
+par(mfrow = c(2,2))
+plot(model_A)
+check_model(model_A)
+check_model(model_A_sensitivity)
+summary(model_A)
+summary(model_A_sensitivity)
+```
+
+```{r model_B}
+
+data1_processed$B10_1_staff_helped_pain_control <- fct_explicit_na(
+  data1_processed$B10_1_staff_helped_pain_control, na_level = "Không áp dụng")
+
+data1_processed$B14_medication_side_effects_explained <- fct_explicit_na(
+  data1_processed$B14_medication_side_effects_explained, na_level = "Không áp dụng")
+
+model_B <- lm(C1_overall_hospital_experience_score ~ 
+                B1_doctor_clear_answers + 
+                B2_nurse_clear_answers + 
+                B3_consistent_staff_answers + 
+                B4_doctor_clear_communication + 
+                B5_doctor_anxiety_counseling + 
+                B6_nurse_anxiety_counseling + 
+                B7_want_treatment_decision_participation + 
+                B8_respectful_treatment_by_staff +
+                B9_shared_concerns_with_staff + 
+                B10_1_staff_helped_pain_control +
+                B11_family_communication_with_doctor + 
+                B12_family_received_recovery_information + 
+                B13_clear_medication_instructions + 
+                B14_medication_side_effects_explained + 
+                B15_warning_signs_explained
+               , data = data1_processed)
+
+model_B_sensitivity <- lm(C1_overall_hospital_experience_score ~ 
+                B1_doctor_clear_answers + 
+                B2_nurse_clear_answers + 
+                B3_consistent_staff_answers + 
+                B4_doctor_clear_communication + 
+                B5_doctor_anxiety_counseling + 
+                B6_nurse_anxiety_counseling + 
+                B7_want_treatment_decision_participation + 
+                B8_respectful_treatment_by_staff +
+                B9_shared_concerns_with_staff + 
+                B10_1_staff_helped_pain_control +
+                B11_family_communication_with_doctor + 
+                B12_family_received_recovery_information + 
+                B13_clear_medication_instructions + 
+                B14_medication_side_effects_explained + 
+                B15_warning_signs_explained, 
+                data = data1_processed[-c(1463, 3201, 3229, 3248), ])
+
+par(mfrow = c(2,2))
+plot(model_B)
+check_model(model_B)
+check_model(model_B_sensitivity)
+summary(model_B)
+summary(model_B_sensitivity)
+```
+
+```{r model_C}
+
+```
+
+```{r print_table_model}
+model_A_sensitivity_table <-
+  tbl_regression(
+    model_A_sensitivity,
+    exponentiate = FALSE,   # hoặc bỏ dòng này
+    label = list(
+      A2_gender ~ "Giới tính",
+      A4_education_level ~ "Trình độ học vấn",
+      A7_occupation_broad ~ "Nghề nghiệp",
+      A9_payment_method_fix ~ "Khả năng thanh toán viện phí",
+      A12_0_admission_reason_fix ~ "Lý do nhập viện",
+      length_of_stay_clean ~ "Thời gian nằm viện",
+      A16_used_insurance_for_payment ~ "Có sử dụng BHYT để thanh toán?"
+    ),
+    estimate_fun = function(x) style_sigfig(x, digits = 3),
+    pvalue_fun   = function(x) style_pvalue(x, digits = 3)
+  ) %>%
+  bold_p(t = 0.05) %>%        # ✅ phiên bản bạn đang dùng dùng `t=`
+  modify_header(
+    label   = "**Biến**",
+    estimate= "**β**",
+    ci      = "**95% CI**",
+    p.value = "**p-value**")
+
+library(gtsummary)
+library(flextable)
+library(officer)
+
+model_A_sensitivity_flex <- model_A_sensitivity_table %>%
+  as_flex_table() %>%
+  theme_vanilla() %>%
+  # Header format
+  bg(part = "header", bg = "#D9D9D9") %>%
+  color(part = "header", color = "black") %>%
+  bold(part = "header") %>%
+  align(part = "header", align = "center") %>%
+  # Body format
+  align(
+    j = c("estimate", "conf.low", "p.value"),
+    align = "center", part = "body"
+  ) %>%
+  align(j = "label", align = "left", part = "body") %>%
+  bg(
+    i = seq(2, nrow(model_A_sensitivity_table$table_body), by = 2),
+    bg = "#F2F2F2", part = "body"
+  ) %>%
+  width(j = "label", width = 2.8) %>%
+  width(j = c("estimate", "conf.low", "p.value"), width = 1.0) %>%
+  # Footer
+  add_footer_lines(
+    paste0(
+      "β = Hệ số ước lượng; CI = Khoảng tin cậy 95%; N = ",
+      nobs(model_A_sensitivity)
+    )
+  ) %>%
+  fontsize(part = "footer", size = 9) %>%
+  italic(part = "footer") %>%
+  width(j = 1, width = 2.8) %>%
+  width(j = 2, width = 1.0) %>% 
+  width(j = 3, width = 1.5) %>%
+  width(j = 4, width = 1.0)
+
+model_A_sensitivity_flex
+
+save_as_docx(model_A_sensitivity_flex,
+             path = "model_A_sensitivity_table_2.docx")
+```
+
+```{r, include = FALSE}
+knitr:: opts_chunk$set(echo = FALSE, warning = FALSE, mesage = FALSE, comment = "##", 
+                       dpi = 4*72, fig.width = 8.5, fig.height = 4.5)
+```
+

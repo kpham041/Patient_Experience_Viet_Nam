@@ -1,0 +1,446 @@
+---
+title: "Hospital Survey Data Analysis"
+author: "Đam Mê Nghiên Cứu"
+date: "`r Sys.Date()`"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r Set_up, include = FALSE}
+# Ẩn toàn bộ code + output của chính chunk này
+knitr::opts_chunk$set(
+  echo = FALSE, warning = FALSE, message = FALSE,  
+  comment = "##",
+  dpi = 600, 
+  fig.width = 8.5, 
+  fig.height = 4.5, 
+  cache = FALSE)
+
+# Nạp gói và theme, chặn mọi message khởi động
+suppressPackageStartupMessages({
+  if (!requireNamespace("pacman", quietly = TRUE)) install.packages("pacman")
+  pacman::p_load(
+    tidyverse, gtsummary, gt, flextable, officer, broom,
+    performance, car, forcats, glue, janitor, here)
+  theme_gtsummary_journal(journal = "jama")})
+```
+
+```{r Prepare_data, include = FALSE}
+# Chuẩn bị dữ liệu (nền)
+# Import file làm sạch số liệu vào trong file phân tích số liệu
+knitr::knit_child("prepare_raw_data.Rmd", quiet = TRUE)
+```
+
+```{r Table_1_A, echo = FALSE, results = "asis"}
+# Table 1: Bảng mô tả biến số phần A
+data1_processed <- data1_processed |>
+  dplyr::mutate(
+    A10_hospital_treated = forcats::fct_infreq(as.factor(A10_hospital_treated)),
+    dplyr::across(
+      c(age_category, A2_gender, A4_education_level, A5_marital_status,
+        A6_living_situation, A7_occupation_broad, A8_monthly_income,
+        A9_payment_method, A11_1_clinical_department_cleaned,
+        A12_0_admission_reason_fix, length_of_stay_group,
+        A14_other_chronic_disease, A15_health_insurance,
+        A16_used_insurance_for_payment, A17_discharge_condition,
+        A18_physical_health_perception, A19_mental_health_perception),
+      ~ as.factor(.x)
+    )
+  )
+
+table_1 <- data1_processed |>
+  dplyr::select(
+    age_category, A2_gender, A4_education_level, A5_marital_status,
+    A6_living_situation, A7_occupation_broad, A8_monthly_income,
+    A9_payment_method, A10_hospital_treated, A12_0_admission_reason_fix,
+    length_of_stay_clean,
+    A14_other_chronic_disease, A15_health_insurance,
+    A16_used_insurance_for_payment, A17_discharge_condition,
+    A18_physical_health_perception, A19_mental_health_perception
+  ) |>
+  gtsummary::tbl_summary(
+    label = list(
+      age_category ~ "Age Group (years)",
+      A2_gender ~ "Gender",
+      A4_education_level ~ "Education Level",
+      A5_marital_status ~ "Marital Status",
+      A6_living_situation ~ "Living Situation",
+      A7_occupation_broad ~ "Occupation",
+      A8_monthly_income ~ "Monthly Income",
+      A9_payment_method ~ "Payment Method",
+      A10_hospital_treated ~ "Hospital Treated",
+      A12_0_admission_reason_fix ~ "Admission Reason",
+      length_of_stay_clean ~ "Length of Stay (days)",
+      A14_other_chronic_disease ~ "Other Chronic Disease",
+      A15_health_insurance ~ "Health Insurance",
+      A16_used_insurance_for_payment ~ "Used Insurance for Payment",
+      A17_discharge_condition ~ "Discharge Condition",
+      A18_physical_health_perception ~ "Physical Health Perception",
+      A19_mental_health_perception ~ "Mental Health Perception"
+    ),
+    statistic = list(
+      gtsummary::all_continuous() ~ "{median} ({p25}, {p75})",
+      gtsummary::all_categorical() ~ "{n} ({p}%)"
+    ),
+    type = list(
+      length_of_stay_clean ~ "continuous"
+    ),
+    missing_text = "Missing"
+  ) |>
+  gtsummary::bold_labels() |>
+  gtsummary::modify_header(
+    label  ~ "**Characteristic**",
+    stat_0 ~ "**Overall**\nN = {N}"
+  )
+```
+
+```{r print_flex_table_1_A echo = FALSE, results = "asis"}
+final_table_1_A <- table_1 |>
+gtsummary::as_flex_table() |>
+flextable::font(font = "Arial", part = "all") |>
+flextable::fontsize(size = 11, part = "all") |>
+flextable::bold(part = "header") |>
+flextable::border_remove() |>
+flextable::hline_top(part = "header",
+border = officer::fp_border(color = "black", width = 2)) |>
+flextable::hline(part = "header",
+border = officer::fp_border(color = "black", width = 1)) |>
+flextable::hline_bottom(part = "body",
+border = officer::fp_border(color = "black", width = 2)) |>
+flextable::autofit() |>
+flextable::set_caption("Table 1. Patient characteristics (overall sample)") |>
+flextable::add_footer_lines(
+"Data are median (IQR) for continuous variables and n (%) for categorical variables."
+) |>
+flextable::align(align = "left", part = "all")
+
+n_body <- flextable::nrow_part(final_table_1_A, part = "body")
+final_table_1_A <- flextable::bg(
+final_table_1_A,
+i = seq(1, n_body, by = 2), # 1,3,5,...
+part = "body",
+bg = "#F8F9FA"
+)
+```
+
+```{r Table_1_B echo = FALSE, results = "asis"}
+# Table_1_B: Bảng mô tả biến số liệu phần B
+data1_processed <- data1_processed |>
+  dplyr::mutate(
+    dplyr::across(
+      c(B1_doctor_clear_answers,
+        B2_nurse_clear_answers,
+        B3_consistent_staff_answers,
+        B4_doctor_clear_communication,
+        B5_doctor_anxiety_counseling,
+        B6_nurse_anxiety_counseling,
+        B7_want_treatment_decision_participation,
+        B8_respectful_treatment_by_staff,
+        B9_shared_concerns_with_staff,
+        B10_experienced_pain,
+        B10_1_staff_helped_pain_control,   # nhánh của B10 (chỉ hiện khi có đau)
+        B11_family_communication_with_doctor,
+        B12_family_received_recovery_information,
+        B13_clear_medication_instructions,
+        B14_medication_side_effects_explained, # nhánh của B13
+        B15_warning_signs_explained),
+      ~ as.factor(.x)
+    )
+  )
+
+table_1_b <- data1_processed |>
+  dplyr::select(
+    B1_doctor_clear_answers,
+    B2_nurse_clear_answers,
+    B3_consistent_staff_answers,
+    B4_doctor_clear_communication,
+    B5_doctor_anxiety_counseling,
+    B6_nurse_anxiety_counseling,
+    B7_want_treatment_decision_participation,
+    B8_respectful_treatment_by_staff,
+    B9_shared_concerns_with_staff,
+    B10_experienced_pain,
+    B10_1_staff_helped_pain_control,          # có skip pattern
+    B11_family_communication_with_doctor,
+    B12_family_received_recovery_information,
+    B13_clear_medication_instructions,
+    B14_medication_side_effects_explained,    # có skip pattern
+    B15_warning_signs_explained
+  ) |>
+  gtsummary::tbl_summary(
+    label = list(
+      B1_doctor_clear_answers ~ "B1. Doctor gave clear answers",
+      B2_nurse_clear_answers ~ "B2. Nurse gave clear answers",
+      B3_consistent_staff_answers ~ "B3. Staff gave consistent answers",
+      B4_doctor_clear_communication ~ "B4. Doctor communicated clearly",
+      B5_doctor_anxiety_counseling ~ "B5. Doctor addressed anxiety",
+      B6_nurse_anxiety_counseling ~ "B6. Nurse addressed anxiety",
+      B7_want_treatment_decision_participation ~ "B7. Wanted to join decisions",
+      B8_respectful_treatment_by_staff ~ "B8. Treated respectfully",
+      B9_shared_concerns_with_staff ~ "B9. Could share concerns",
+      B10_experienced_pain ~ "B10. Experienced pain during stay",
+      B10_1_staff_helped_pain_control ~ "B10.1 Staff helped with pain control",
+      B11_family_communication_with_doctor ~ "B11. Family could talk to doctor",
+      B12_family_received_recovery_information ~ "B12. Family got recovery info",
+      B13_clear_medication_instructions ~ "B13. Clear med instructions",
+      B14_medication_side_effects_explained ~ "B14. Side effects explained",
+      B15_warning_signs_explained ~ "B15. Warning signs explained"
+    ),
+    statistic = list(
+      gtsummary::all_categorical() ~ "{n} ({p}%)"
+    ),
+    missing = "no"   # << ẨN dòng Missing cho tất cả biến (B10_1, B14 sẽ không hiện Missing do skip)
+  ) |>
+  gtsummary::bold_labels() |>
+  gtsummary::modify_header(
+    label  ~ "**Item (PPE-15)**",
+    stat_0 ~ "**Overall**\nN = {N}"
+  )
+```
+
+```{r print_ flex_table_1_B echo = FALSE, results = "asis"}
+final_table_1_B <- table_1_b |>
+  gtsummary::as_flex_table() |>
+  flextable::font(font = "Arial", part = "all") |>
+  flextable::fontsize(size = 11, part = "all") |>
+  flextable::bold(part = "header") |>
+  flextable::border_remove() |>
+  flextable::hline_top(part = "header",
+                       border = officer::fp_border(color = "black", width = 2)) |>
+  flextable::hline(part = "header",
+                   border = officer::fp_border(color = "black", width = 1)) |>
+  flextable::hline_bottom(part = "body",
+                          border = officer::fp_border(color = "black", width = 2)) |>
+  flextable::autofit() |>
+  flextable::set_caption("Table B. Patient experience items (PPE-15)") |>
+  flextable::add_footer_lines(
+    "Values are n (%). Items B10.1 and B14 are skip-pattern questions; Missing not displayed."
+  ) |>
+  flextable::align(align = "left", part = "all")
+```
+
+```{r table_2}
+# Chuẩn hoá NA thành "Không áp dụng" cho một số biến B*
+data1_processed$B10_1_staff_helped_pain_control <-
+  forcats::fct_explicit_na(data1_processed$B10_1_staff_helped_pain_control, na_level = "Không áp dụng")
+data1_processed$B14_medication_side_effects_explained <-
+  forcats::fct_explicit_na(data1_processed$B14_medication_side_effects_explained, na_level = "Không áp dụng")
+
+# Dữ liệu hoàn chỉnh cho model 1
+model1_data <- data1_processed %>%
+  filter(
+    !is.na(c1_overall_experience_binary),
+    !is.na(B1_doctor_clear_answers),
+    !is.na(B2_nurse_clear_answers),
+    !is.na(B4_doctor_clear_communication),
+    !is.na(B8_respectful_treatment_by_staff)
+  )
+
+# Logistic regression (Core Communication)
+model1 <- glm(
+  c1_overall_experience_binary ~
+    B1_doctor_clear_answers +
+    B2_nurse_clear_answers +
+    B3_consistent_staff_answers +
+    B4_doctor_clear_communication +
+    B5_doctor_anxiety_counseling +
+    B6_nurse_anxiety_counseling +
+    B7_want_treatment_decision_participation +
+    B8_respectful_treatment_by_staff +
+    B9_shared_concerns_with_staff +
+    B10_experienced_pain +
+    B10_1_staff_helped_pain_control +
+    B11_family_communication_with_doctor +
+    B12_family_received_recovery_information +
+    B13_clear_medication_instructions +
+    B14_medication_side_effects_explained +
+    B15_warning_signs_explained,
+  family = binomial, data = model1_data
+)
+
+# Bảng OR (flextable)
+tbl_model1_flex <-
+  tbl_regression(
+    model1,
+    exponentiate = TRUE,
+    label = list(
+      B1_doctor_clear_answers ~ "B1 - Doctor clear answers",
+      B2_nurse_clear_answers ~ "B2 - Nurse clear answers",
+      B3_consistent_staff_answers ~ "B3 - Consistent staff answers",
+      B4_doctor_clear_communication ~ "B4 - Doctor clear communication",
+      B5_doctor_anxiety_counseling ~ "B5 - Doctor anxiety counseling",
+      B6_nurse_anxiety_counseling ~ "B6 - Nurse anxiety counseling",
+      B7_want_treatment_decision_participation ~ "B7 - Treatment decision participation",
+      B8_respectful_treatment_by_staff ~ "B8 - Respectful treatment by staff",
+      B9_shared_concerns_with_staff ~ "B9 - Shared concerns with staff",
+      B10_experienced_pain ~ "B10 - Experienced pain",
+      B10_1_staff_helped_pain_control ~ "B10_1 - Staff helped pain control",
+      B11_family_communication_with_doctor ~ "B11 - Family communication with doctor",
+      B12_family_received_recovery_information ~ "B12 - Family received recovery information",
+      B13_clear_medication_instructions ~ "B13 - Clear medication instructions",
+      B14_medication_side_effects_explained ~ "B14 - Medication side effects explained",
+      B15_warning_signs_explained ~ "B15 - Warning signs explained"
+    ),
+    estimate_fun = ~style_ratio(.x, digits = 3),
+    pvalue_fun   = ~style_pvalue(.x, digits = 3)
+  ) %>%
+  bold_p(t = 0.05) %>%
+  modify_header(
+    label = "**Variable**",
+    estimate = "**Adjusted OR**",
+    ci = "**95% CI**",
+    p.value = "**p-value**"
+  ) %>%
+  as_flex_table() %>%
+  theme_vanilla() %>%
+  bg(part = "header", bg = "#D9D9D9") %>%
+  color(part = "header", color = "black") %>%
+  bold(part = "header") %>%
+  align(part = "header", align = "center") %>%
+  align(j = c("estimate","ci","p.value"), align = "center", part = "body") %>%
+  align(j = "label", align = "left", part = "body") %>%
+  add_footer_lines(paste0("OR = Odds Ratio; CI = Confidence Interval; N = ", stats::nobs(model1))) %>%
+  fontsize(part = "footer", size = 9) %>%
+  italic(part = "footer") %>%
+  autofit()
+```
+
+```{r tbl_model}
+tbl_model1_flex
+```
+
+```{r}
+# Chuẩn hoá lại một số biến danh mục nếu chưa có
+data1_processed <- data1_processed %>%
+  mutate(
+    A12_0_admission_reason_fix = case_when(
+      A12_0_admission_reason_code %in% c("Dịch vụ sản khoa", "Điều trị hoá chất", "Khác") ~ "Khác",
+      A12_0_admission_reason_code == "Điều trị bệnh mạn tính" ~ "Điều trị bệnh mạn tính",
+      A12_0_admission_reason_code == "Điều trị đợt cấp của bệnh" ~ "Điều trị đợt cấp của bệnh",
+      A12_0_admission_reason_code == "Nhập viện cấp cứu" ~ "Nhập viện cấp cứu",
+      A12_0_admission_reason_code == "Phẫu thuật/thủ thuật" ~ "Phẫu thuật/thủ thuật",
+      TRUE ~ NA_character_
+    ),
+    A9_payment_method_group = case_when(
+      A9_payment_method %in% c("Được BHXH chi trả", "Tự chi trả được") ~ "Không gặp vấn đề với việc chi trả viện phí",
+      A9_payment_method %in% c("Phải vay mượn", "Vừa được BHXH chi trả và vừa vay mượn") ~ "Gặp khó khăn với việc chi trả viện phí",
+      TRUE ~ NA_character_
+    )
+  )
+
+# Đảm bảo các biến B có mức "Không áp dụng" thay vì NA
+data1_processed$B10_1_staff_helped_pain_control <-
+  forcats::fct_explicit_na(data1_processed$B10_1_staff_helped_pain_control, na_level = "Không áp dụng")
+data1_processed$B14_medication_side_effects_explained <-
+  forcats::fct_explicit_na(data1_processed$B14_medication_side_effects_explained, na_level = "Không áp dụng")
+
+# ====== ƯỚC LƯỢNG CÁC MÔ HÌNH (chạy nền) ======
+model_6 <- lm(C1_overall_hospital_experience_score ~
+               A2_gender + age_category + A4_education_level + A5_marital_status +
+               A6_living_situation + A7_0_occupation_code + A8_monthly_income +
+               A9_payment_method + A10_hospital_treated +
+               A11_1_clinical_department_code + A12_0_admission_reason_code +
+               length_of_stay_clean + A14_other_chronic_disease + A15_health_insurance +
+               A16_used_insurance_for_payment + A17_discharge_condition +
+               A18_physical_health_perception + A19_mental_health_perception +
+               C2_trust_hospital_quality + C3_would_recommend_hospital +
+               C4_hospital_loyalty + C5_intention_to_return,
+             data = data1_processed)
+
+model_7 <- lm(C1_overall_hospital_experience_score ~
+               A2_gender + A4_education_level + A7_occupation_broad +
+               A9_payment_method_group + A12_0_admission_reason_fix +
+               length_of_stay_clean + A16_used_insurance_for_payment,
+             data = data1_processed)
+
+model_A <- lm(C1_overall_hospital_experience_score ~
+                A2_gender + A4_education_level + A7_occupation_broad +
+                A9_payment_method_group + A12_0_admission_reason_fix +
+                length_of_stay_clean,
+              data = data1_processed)
+
+model_A_sensitivity <- lm(C1_overall_hospital_experience_score ~
+                            A2_gender + A4_education_level + A7_occupation_broad +
+                            A9_payment_method_group + A12_0_admission_reason_fix +
+                            length_of_stay_clean,
+                          data = data1_processed[-c(1463, 3201, 3229, 3248), ])
+
+model_B <- lm(C1_overall_hospital_experience_score ~
+                B1_doctor_clear_answers + B2_nurse_clear_answers + B3_consistent_staff_answers +
+                B4_doctor_clear_communication + B5_doctor_anxiety_counseling +
+                B6_nurse_anxiety_counseling + B7_want_treatment_decision_participation +
+                B8_respectful_treatment_by_staff + B9_shared_concerns_with_staff +
+                B10_1_staff_helped_pain_control + B11_family_communication_with_doctor +
+                B12_family_received_recovery_information + B13_clear_medication_instructions +
+                B14_medication_side_effects_explained + B15_warning_signs_explained,
+              data = data1_processed)
+
+model_B_sensitivity <- lm(C1_overall_hospital_experience_score ~
+                            B1_doctor_clear_answers + B2_nurse_clear_answers + B3_consistent_staff_answers +
+                            B4_doctor_clear_communication + B5_doctor_anxiety_counseling +
+                            B6_nurse_anxiety_counseling + B7_want_treatment_decision_participation +
+                            B8_respectful_treatment_by_staff + B9_shared_concerns_with_staff +
+                            B10_1_staff_helped_pain_control + B11_family_communication_with_doctor +
+                            B12_family_received_recovery_information + B13_clear_medication_instructions +
+                            B14_medication_side_effects_explained + B15_warning_signs_explained,
+                          data = data1_processed[-c(1463, 3201, 3229, 3248), ])
+
+# ====== GHÉP BẢNG: áp bold_p() TRƯỚC khi merge ======
+tbl_list_named <- list(
+  "Model 6" = model_6,
+  "Model 7" = model_7,
+  "Model A" = model_A,
+  "Model A (sensitivity)" = model_A_sensitivity,
+  "Model B" = model_B,
+  "Model B (sensitivity)" = model_B_sensitivity
+)
+
+tbls_to_merge <-
+  purrr::imap(
+    tbl_list_named,
+    ~ tbl_regression(
+        .x,
+        intercept    = FALSE,
+        estimate_fun = ~style_number(.x, digits = 3),
+        pvalue_fun   = ~style_pvalue(.x, digits = 3)
+      ) %>%
+      bold_p(t = 0.05) %>%
+      modify_caption(glue("{.y}"))
+  )
+
+tbl_models_merged <-
+  tbl_merge(
+    tbls = unname(tbls_to_merge),
+    tab_spanner = names(tbl_list_named)
+  ) %>%
+  modify_header(label = "**Term**")
+
+# >>> TÍNH SẴN CỘT CẦN CĂN GIỮA (LOẠI "label") TRƯỚC KHI as_flex_table()
+body_cols <- setdiff(names(tbl_models_merged$table_body), "label")
+
+tbl_models_merged_flex <-
+  tbl_models_merged |>
+  as_flex_table() |>
+  theme_vanilla() |>
+  bg(part = "header", bg = "#D9D9D9") |>
+  bold(part = "header") |>
+  align(part = "header", align = "center") |>
+  align(part = "body", align = "center") |>
+  align(part = "body", j = "label", align = "left") |>
+  add_header_lines("Comparative coefficients across linear models") |>
+  fontsize(part = "footer", size = 9) |>
+  autofit()
+```
+
+```{r}
+tbl_models_merged_flex
+```
+
+```{r}
+# Tuỳ chọn: lưu riêng các bảng ra Word
+save_as_docx(tbl_models_merged_flex, path = "models_comparison.docx")
+```
+
+
+
