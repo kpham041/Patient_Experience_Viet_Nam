@@ -1,0 +1,841 @@
+---
+title: "Hospital Survey Data Analysis"
+author: "Đam Mê Nghiên Cứu"
+date: "`r Sys.Date()`"
+output:
+  word_document:
+  fig_caption: yes
+  html_document: default
+---
+
+```{r Set_up, include = FALSE}
+# Ẩn toàn bộ code + output của chính chunk này
+knitr::opts_chunk$set(
+  echo = FALSE, warning = FALSE, message = FALSE,  
+  comment = "##",
+  dpi = 600, 
+  fig.width = 8.5, 
+  fig.height = 4.5, 
+  cache = FALSE)
+
+# Nạp gói và theme, chặn mọi message khởi động
+suppressPackageStartupMessages({
+  if (!requireNamespace("pacman", quietly = TRUE)) install.packages("pacman")
+  pacman::p_load(
+    tidyverse, gtsummary, gt, flextable, officer, broom,
+    performance, car, forcats, glue, janitor, here, 
+    olsrr, pscl, DHARMa, MASS, pROC, scales, ResourceSelection)
+  theme_gtsummary_journal(journal = "jama")})
+```
+
+```{r Prepare_data, include = FALSE}
+# Chuẩn bị dữ liệu (nền)
+# Import file làm sạch số liệu vào trong file phân tích số liệu
+knitr::knit_child("prepare_raw_data.Rmd", quiet = TRUE)
+```
+
+```{r Flex_table_promt, echo = FALSE, include = FALSE}
+style_flex_jama <- function(ft, caption = NULL, footer = NULL, zebra = TRUE){
+  ft <- ft |>
+    font(font = "Arial", part = "all") |>
+    fontsize(size = 11, part = "all") |>
+    bold(part = "header") |>
+    border_remove() |>
+    hline_top(part = "header", border = fp_border(color = "black", width = 2)) |>
+    hline(part = "header",     border = fp_border(color = "black", width = 1)) |>
+    hline_bottom(part = "body",border = fp_border(color = "black", width = 2)) |>
+    align(align = "left", part = "all") |>
+    autofit()
+  if (!is.null(caption)) ft <- set_caption(ft, caption)
+  if (!is.null(footer))  ft <- add_footer_lines(ft, values = footer)
+  if (isTRUE(zebra)) {
+    n_body <- nrow_part(ft, part = "body")
+    if (n_body > 0) ft <- bg(ft, i = seq(1, n_body, by = 2), part = "body", bg = "#F8F9FA")
+  }
+  ft
+}
+```
+
+```{r Table_1_A, echo = FALSE, results = "asis"}
+# Table 1: Bảng mô tả biến số phần A
+data1_processed <- data1_processed |>
+  dplyr::mutate(
+    A10_hospital_treated = forcats::fct_infreq(as.factor(A10_hospital_treated)),
+    dplyr::across(
+      c(age_category, A2_gender, A4_education_level, A5_marital_status,
+        A6_living_situation, A7_occupation_broad, A8_monthly_income,
+        A9_payment_method, A12_0_admission_reason_fix, length_of_stay_group,
+        A14_other_chronic_disease, A15_health_insurance,
+        A16_used_insurance_for_payment, A17_discharge_condition,
+        A18_physical_health_perception, A19_mental_health_perception),
+      ~ as.factor(.x)
+    )
+  )
+
+table_1 <- data1_processed |>
+  dplyr::select(
+    age_category, A2_gender, A4_education_level, A5_marital_status,
+    A6_living_situation, A7_occupation_broad, A8_monthly_income,
+    A9_payment_method, A10_hospital_treated, A12_0_admission_reason_fix,
+    length_of_stay_clean,
+    A14_other_chronic_disease, A15_health_insurance,
+    A16_used_insurance_for_payment, A17_discharge_condition,
+    A18_physical_health_perception, A19_mental_health_perception
+  ) |>
+  gtsummary::tbl_summary(
+    label = list(
+      age_category ~ "Age Group (years)",
+      A2_gender ~ "Gender",
+      A4_education_level ~ "Education Level",
+      A5_marital_status ~ "Marital Status",
+      A6_living_situation ~ "Living Situation",
+      A7_occupation_broad ~ "Occupation",
+      A8_monthly_income ~ "Monthly Income",
+      A9_payment_method ~ "Payment Method",
+      A10_hospital_treated ~ "Hospital Treated",
+      A12_0_admission_reason_fix ~ "Admission Reason",
+      length_of_stay_clean ~ "Length of Stay (days)",
+      A14_other_chronic_disease ~ "Other Chronic Disease",
+      A15_health_insurance ~ "Health Insurance",
+      A16_used_insurance_for_payment ~ "Used Insurance for Payment",
+      A17_discharge_condition ~ "Discharge Condition",
+      A18_physical_health_perception ~ "Physical Health Perception",
+      A19_mental_health_perception ~ "Mental Health Perception"
+    ),
+    statistic = list(
+      gtsummary::all_continuous() ~ "{median} ({p25}, {p75})",
+      gtsummary::all_categorical() ~ "{n} ({p}%)"
+    ),
+    type = list(
+      length_of_stay_clean ~ "continuous"
+    ),
+    missing_text = "Missing"
+  ) |>
+  gtsummary::bold_labels() |>
+  gtsummary::modify_header(
+    label  ~ "**Characteristic**",
+    stat_0 ~ "**Overall**\nN = {N}"
+  )
+```
+
+#Table 1 A: Describe Demographic Characteristic of Patients 
+```{r Print_flex_table_1_A, echo = FALSE, results = "asis"}
+final_table_1_A <- table_1 |>
+gtsummary::as_flex_table() |>
+flextable::font(font = "Arial", part = "all") |>
+flextable::fontsize(size = 11, part = "all") |>
+flextable::bold(part = "header") |>
+flextable::border_remove() |>
+flextable::hline_top(part = "header",
+border = officer::fp_border(color = "black", width = 2)) |>
+flextable::hline(part = "header",
+border = officer::fp_border(color = "black", width = 1)) |>
+flextable::hline_bottom(part = "body",
+border = officer::fp_border(color = "black", width = 2)) |>
+flextable::autofit() |>
+flextable::set_caption("Table 1. Patient characteristics (overall sample)") |>
+flextable::add_footer_lines(
+"Data are median (IQR) for continuous variables and n (%) for categorical variables."
+) |>
+flextable::align(align = "left", part = "all")
+
+n_body <- flextable::nrow_part(final_table_1_A, part = "body")
+final_table_1_A <- flextable::bg(
+final_table_1_A,
+i = seq(1, n_body, by = 2), # 1,3,5,...
+part = "body",
+bg = "#F8F9FA"
+)
+
+final_table_1_A 
+```
+
+```{r Table_1_B, echo = FALSE, results = "asis"}
+# Table_1_B: Bảng mô tả biến số liệu phần B
+data1_processed <- data1_processed |>
+  dplyr::mutate(
+    dplyr::across(
+      c(B1_doctor_clear_answers,
+        B2_nurse_clear_answers,
+        B3_consistent_staff_answers,
+        B4_doctor_clear_communication,
+        B5_doctor_anxiety_counseling,
+        B6_nurse_anxiety_counseling,
+        B7_want_treatment_decision_participation,
+        B8_respectful_treatment_by_staff,
+        B9_shared_concerns_with_staff,
+        B10_experienced_pain,
+        B10_1_staff_helped_pain_control,   # nhánh của B10 (chỉ hiện khi có đau)
+        B11_family_communication_with_doctor,
+        B12_family_received_recovery_information,
+        B13_clear_medication_instructions,
+        B14_medication_side_effects_explained, # nhánh của B13
+        B15_warning_signs_explained),
+      ~ as.factor(.x))
+    ,
+        B10_1_staff_helped_pain_control =
+      forcats::fct_explicit_na(B10_1_staff_helped_pain_control, na_level = "Not applicable"),
+    B14_medication_side_effects_explained =
+      forcats::fct_explicit_na(B14_medication_side_effects_explained, na_level = "Not applicable"))
+
+table_1_b <- data1_processed |>
+  dplyr::select(
+    B1_doctor_clear_answers,
+    B2_nurse_clear_answers,
+    B3_consistent_staff_answers,
+    B4_doctor_clear_communication,
+    B5_doctor_anxiety_counseling,
+    B6_nurse_anxiety_counseling,
+    B7_want_treatment_decision_participation,
+    B8_respectful_treatment_by_staff,
+    B9_shared_concerns_with_staff,
+    B10_experienced_pain,
+    B10_1_staff_helped_pain_control,          # có skip pattern
+    B11_family_communication_with_doctor,
+    B12_family_received_recovery_information,
+    B13_clear_medication_instructions,
+    B14_medication_side_effects_explained,    # có skip pattern
+    B15_warning_signs_explained
+  ) |>
+  gtsummary::tbl_summary(
+    label = list(
+      B1_doctor_clear_answers ~ "B1. Doctor gave clear answers",
+      B2_nurse_clear_answers ~ "B2. Nurse gave clear answers",
+      B3_consistent_staff_answers ~ "B3. Staff gave consistent answers",
+      B4_doctor_clear_communication ~ "B4. Doctor communicated clearly",
+      B5_doctor_anxiety_counseling ~ "B5. Doctor addressed anxiety",
+      B6_nurse_anxiety_counseling ~ "B6. Nurse addressed anxiety",
+      B7_want_treatment_decision_participation ~ "B7. Wanted to join decisions",
+      B8_respectful_treatment_by_staff ~ "B8. Treated respectfully",
+      B9_shared_concerns_with_staff ~ "B9. Could share concerns",
+      B10_experienced_pain ~ "B10. Experienced pain during stay",
+      B10_1_staff_helped_pain_control ~ "B10.1 Staff helped with pain control",
+      B11_family_communication_with_doctor ~ "B11. Family could talk to doctor",
+      B12_family_received_recovery_information ~ "B12. Family got recovery info",
+      B13_clear_medication_instructions ~ "B13. Clear med instructions",
+      B14_medication_side_effects_explained ~ "B14. Side effects explained",
+      B15_warning_signs_explained ~ "B15. Warning signs explained"
+    ),
+    statistic = list(
+      gtsummary::all_categorical() ~ "{n} ({p}%)"
+    ),
+    missing = "no" # Ẩn Missing (vì đã thay NA = "Not applicable")
+  ) |>
+  gtsummary::bold_labels() |>
+  gtsummary::modify_header(
+    label  ~ "**Item (PPE-15)**",
+    stat_0 ~ "**Overall**\nN = {N}"
+  )
+```
+
+#Table 1 B: Describe PPE - 15 Questions Result
+```{r Print_flex_table_1_B, echo = FALSE, results = "asis"}
+final_table_1_B <- table_1_b |>
+  gtsummary::as_flex_table() |>
+  flextable::font(font = "Arial", part = "all") |>
+  flextable::fontsize(size = 11, part = "all") |>
+  flextable::bold(part = "header") |>
+  flextable::border_remove() |>
+  flextable::hline_top(part = "header",
+                       border = officer::fp_border(color = "black", width = 2)) |>
+  flextable::hline(part = "header",
+                   border = officer::fp_border(color = "black", width = 1)) |>
+  flextable::hline_bottom(part = "body",
+                          border = officer::fp_border(color = "black", width = 2)) |>
+  flextable::autofit() |>
+  flextable::set_caption("Table B. Patient experience items (PPE-15)") |>
+  flextable::add_footer_lines(
+    "Values are n (%). Items B10.1 and B14 are skip-pattern questions; Missing not displayed."
+  ) |>
+  flextable::align(align = "left", part = "all")
+
+final_table_1_B
+```
+
+#Figure 1: Patients Experience Score 
+```{r Box_plot_C1, echo = FALSE, fig.cap = "Điểm trải nghiệm người bệnh nội trú"}
+data1_processed <- data1_processed %>%
+  mutate(C1_overall_hospital_experience_score = as.numeric(C1_overall_hospital_experience_score))
+
+#Tạo biểu đồ boxplot cho câu C1
+ggplot(data1_processed, aes(y = C1_overall_hospital_experience_score)) +
+  geom_boxplot(
+    fill = "#2C77BF",        # màu hộp
+    color = "black",         # viền đen
+    width = 0.3, 
+    outlier.shape = 21,
+    outlier.fill = "#F8F9FA"
+  ) +
+  labs(
+    title = "Điểm trải nghiệm người bệnh nội trú",
+    y = "Điểm trải nghiệm (0 – 10)",
+    x = NULL
+  ) +
+  scale_y_continuous(
+    breaks = 0:10,
+    limits = c(-0.5, 10.5),
+    expand = expansion(mult = c(0, 0.02))
+  ) +
+  theme_minimal(base_family = "Arial") +
+  theme(
+    plot.title = element_text(face = "bold", size = 13, hjust = 0.5),
+    axis.title.y = element_text(size = 11, face = "bold"),
+    axis.text = element_text(size = 10),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank()
+  )
+
+```
+
+```{r Table_1_C2-C5, echo = FALSE, results = "asis"}
+#Bảng mô tả Phần C từ câu C2 đến C5
+tbl_C2_C5 <- data1_processed %>%
+  dplyr::mutate(
+    dplyr::across(
+      c(C2_trust_hospital_quality, 
+        C3_would_recommend_hospital, 
+        C4_hospital_loyalty,
+        C5_intention_to_return),
+      ~ as.factor(.x)
+    )
+  ) %>%
+  dplyr::select(
+    C2_trust_hospital_quality, 
+    C3_would_recommend_hospital, 
+    C4_hospital_loyalty,
+    C5_intention_to_return
+  ) %>%
+  gtsummary::tbl_summary(
+    label = list(
+      C2_trust_hospital_quality ~ "Trust hospital quality",
+      C3_would_recommend_hospital ~ "Would recommend hospital or not",
+      C4_hospital_loyalty ~ "Hospital loyalty",
+      C5_intention_to_return ~ "Intention to return"
+    ),
+    statistic = list(gtsummary::all_categorical() ~ "{n} ({p}%)"),
+    missing = "no"
+  ) %>%
+  gtsummary::bold_labels() %>%
+  gtsummary::modify_header(
+    label  ~ "**Item (C2–C5)**",
+    stat_0 ~ "**Overall**\nN = {N}"
+  )
+```
+
+#Table 1 C2 - C5: Hospital Loyaty
+```{r Print_flex_table_1_C2-C5, echo = FALSE, results = "asis"}
+flex_table_C2_C5 <- tbl_C2_C5 |>
+  gtsummary::as_flex_table() |>
+  flextable::font(font = "Arial", part = "all") |>
+  flextable::fontsize(size = 11, part = "all") |>
+  flextable::bold(part = "header") |>
+  flextable::border_remove() |>
+  flextable::hline_top(part = "header",
+                       border = officer::fp_border(color = "black", width = 2)) |>
+  flextable::hline(part = "header",
+                   border = officer::fp_border(color = "black", width = 1)) |>
+  flextable::hline_bottom(part = "body",
+                          border = officer::fp_border(color = "black", width = 2)) |>
+  flextable::autofit() |>
+  flextable::set_caption("Table C2 - C5: Hospital Loyalty") |>
+  flextable::add_footer_lines(
+    "Values are n (%)"
+  ) |>
+  flextable::align(align = "left", part = "all")
+
+flex_table_C2_C5
+```
+
+```{r Table_1_C6, echo = FALSE, results = "asis"}
+#Gắn ID cho bệnh nhân
+data1_processed <- data1_processed %>%
+  dplyr::mutate(resp_id = dplyr::row_number())
+
+# 4.1. Danh mục lựa chọn chính thức (chuẩn hoá)
+c6_official <- c(
+  "Chất lượng dịch vụ",
+  "Chi phí hợp lý",
+  "Gần nơi sinh sống",
+  "Sự chuyên nghiệp của nhân viên y tế",
+  "Tôi không có lựa chọn khác"
+)
+
+# 4.2. Tách đa lựa chọn thành dạng dài (long)
+c6_long <- data1_processed %>%
+  dplyr::select(resp_id, C6_return_reason_text) %>%     # thay tên biến nếu khác
+  dplyr::mutate(C6_return_reason_text = coalesce(C6_return_reason_text, "")) %>%
+  separate_rows(C6_return_reason_text, sep = "[,;]+\\s*") %>%  # tách theo dấu phẩy/chấm phẩy
+  mutate(choice_raw = str_squish(C6_return_reason_text)) %>%
+  filter(choice_raw != "") %>%
+  mutate(choice_group = if_else(choice_raw %in% c6_official, choice_raw, "Khác")) %>%
+  distinct(resp_id, choice_group)   # mỗi người–mỗi nhóm lý do chỉ tính 1 lần
+
+# 4.3. Mẫu số: số người có trả lời C6 (ít nhất một lựa chọn)
+n_resp_c6 <- c6_long %>% distinct(resp_id) %>% nrow()
+n_total   <- nrow(data1_processed)  # nếu muốn % trên toàn bộ mẫu
+
+# 4.4. Bảng tần suất & tỷ lệ
+tab_C6 <- c6_long %>%
+  count(choice_group, name = "n") %>%
+  mutate(
+    percent_of_respondents = round(100 * n / n_resp_c6, 1),
+    percent_of_total       = round(100 * n / n_total, 1)
+  ) %>%
+  arrange(desc(n))
+
+# 4.5. (tuỳ chọn) liệt kê các phương án “Khác” phổ biến
+tab_C6_other <- data1_processed %>%
+  dplyr::select(resp_id, C6_return_reason_text) %>%
+  dplyr::mutate(C6_return_reason_text = coalesce(C6_return_reason_text, "")) %>%
+  separate_rows(C6_return_reason_text, sep = "[,;]+\\s*") %>%
+  mutate(choice_raw = str_squish(C6_return_reason_text)) %>%
+  filter(choice_raw != "", !(choice_raw %in% c6_official)) %>%
+  count(choice_raw, sort = TRUE, name = "n")
+```
+
+#Table 1 C6: Reasons to return to the hospital
+```{r Print_Table_1_C6, echo = FALSE, results = "asis"}
+flex_table_1_C6 <- tab_C6 %>%
+  dplyr::mutate(
+    `Reason` = choice_group,
+    `n` = n,
+    `% of respondents` = percent_of_respondents,
+    `% of total`       = percent_of_total
+  ) %>%
+  dplyr::select(`Reason`, n, `% of respondents`, `% of total`) %>%
+  flextable::flextable() %>%
+  flextable::font(font = "Arial", part = "all") %>%
+  flextable::fontsize(size = 11, part = "all") %>%
+  flextable::bold(part = "header") %>%
+  flextable::autofit() %>%
+  flextable::set_caption("Reasons to return to the hospital") %>%
+  flextable::add_footer_lines(
+    values = paste0(
+      "Percent of respondents uses N = ", n_resp_c6,
+      ". Items are multi-response. ‘Other’ aggregates non-listed reasons."
+    )
+  )
+
+flex_table_1_C6
+
+# flex_table_1_C6_other <- tab_C6_other %>%
+#   dplyr::mutate(
+#     Reason = choice_raw,
+#     n = n,
+#     `% of respondents` = round(100 * n / n_resp_c6, 1),
+#     `% of total` = round(100 * n / n_total, 1)
+#   ) %>%
+#   dplyr::select(Reason, n, `% of respondents`, `% of total`) %>%
+#   flextable::flextable() %>%
+#   flextable::font(font = "Arial", part = "all") %>%
+#   flextable::fontsize(size = 11, part = "all") %>%
+#   flextable::bold(part = "header") %>%
+#   flextable::autofit() %>%
+#   flextable::set_caption("Other reasons to return to the hospital") %>%
+#   flextable::add_footer_lines(
+#     values = paste0(
+#       "Percent of respondents uses N = ", n_resp_c6,
+#       ". Items are multi-response; ‘Other’ aggregates non-listed reasons."
+#     )
+#   )
+```
+
+```{r Table_2_Model_A_full, echo = FALSE, results = "asis"}
+#Model A gồm tất cả các biến nhân khẩu học trong phần A
+model_full_raw <- lm(C1_overall_hospital_experience_score ~ 
+                       A2_gender + 
+                       age_category + 
+                       A4_education_level + 
+                       A5_marital_status + 
+                       A6_living_situation + 
+                       A7_0_occupation_code + 
+                       A8_monthly_income + 
+                       A9_payment_method + 
+                       A10_hospital_treated + 
+                       A12_0_admission_reason_code + 
+                       length_of_stay_clean + 
+                       A14_other_chronic_disease + 
+                       A15_health_insurance + 
+                       A16_used_insurance_for_payment + 
+                       A17_discharge_condition + 
+                       A18_physical_health_perception + 
+                       A19_mental_health_perception, 
+                     data = data1_processed)
+##Adj R^2 của mô hình này là 0.2250195
+
+model_2_A_full_grp <- lm(C1_overall_hospital_experience_score ~ 
+               A2_gender + 
+               age_category + 
+               A4_education_level +
+               A5_marital_status +
+               A6_living_situation + 
+               A7_occupation_broad + 
+               A8_monthly_income + 
+               A9_payment_method + 
+               A10_hospital_treated + 
+               A12_0_admission_reason_fix + 
+               length_of_stay_group + 
+               A14_other_chronic_disease +  
+               A15_health_insurance + 
+               A16_used_insurance_for_payment + 
+               A17_discharge_condition + 
+               A18_physical_health_perception + 
+               A19_mental_health_perception, 
+             data = data1_processed)
+##Adj R^2 của mô hình này là 0.2278061
+
+model_2_A_reduced <- lm(C1_overall_hospital_experience_score ~ 
+               A2_gender + 
+               A4_education_level +
+               # A5_marital_status +
+               # A6_living_situation + 
+               A7_occupation_broad +
+               A9_payment_method_group + 
+               # A10_hospital_treated + 
+               A12_0_admission_reason_fix + 
+               length_of_stay_clean + 
+               A16_used_insurance_for_payment 
+               # A17_discharge_condition + 
+               # A18_physical_health_perception + 
+               # A19_mental_health_perception +
+               # C2_trust_hospital_quality + 
+               # C3_would_recommend_hospital + 
+               # C4_hospital_loyalty + 
+               # C5_intention_to_return
+               , data = data1_processed)
+##Adj R^2 của mô hình này là 0.05603
+
+model_2_A_step <- lm(C1_overall_hospital_experience_score ~ 
+               A2_gender + 
+               # age_category + 
+               # A4_education_level +
+               A5_marital_status +
+               # A6_living_situation +
+               A7_occupation_broad + 
+               A8_monthly_income +
+               A9_payment_method + 
+               A10_hospital_treated + 
+               A12_0_admission_reason_fix + 
+               length_of_stay_group + 
+               # A14_other_chronic_disease +
+               A15_health_insurance + 
+               A16_used_insurance_for_payment + 
+               A17_discharge_condition + 
+               # A18_physical_health_perception + 
+               A19_mental_health_perception, 
+             data = data1_processed)
+##Adj R^2 của mô hình này là 0.2273, AIC thấp nhất 179,84
+
+#Tìm mô hình có Adj R^2 tối ưu: best_subset <- ols_step_best_subset(model_2_A_full_grp)
+```
+
+#Model Linear Regression A: Demographic Characteristics of patients
+```{r Prints_model_A, echo = FALSE, results = "asis"}
+table_2_A_full_grp <- gtsummary::tbl_regression(
+  model_2_A_full_grp,
+  intercept = FALSE,      # không hiển thị hệ số chặn
+  estimate_fun = ~ style_sigfig(.x, digits = 2)  # làm tròn 2 chữ số có ý nghĩa
+) |>
+  bold_labels() |>
+  modify_caption("**Table B. Multivariable linear regression for patient experience (PPE-15, Section B)**")
+
+flex_table_2_A_full_grp <- as_flex_table(table_2_A_full_grp) |>
+  style_flex_jama(
+    caption = "Multivariable linear regression for Demographic Characteristics of patients (Full)",
+    footer  = "Values are β coefficients (95% CI) from a linear regression model. Outcome: overall inpatient experience score (C1)."
+  )
+
+flex_table_2_A_full_grp
+
+table_2_A_reduced <- gtsummary::tbl_regression(
+  model_2_A_reduced,
+  intercept = FALSE,      # không hiển thị hệ số chặn
+  estimate_fun = ~ style_sigfig(.x, digits = 2)  # làm tròn 2 chữ số có ý nghĩa
+) |>
+  bold_labels() |>
+  modify_caption("**Table B. Multivariable linear regression for patient experience (PPE-15, Section B)**")
+
+flex_table_2_A_reduced  <- as_flex_table(table_2_A_reduced) |>
+  style_flex_jama(
+    caption = "Multivariable linear regression for Demographic Characteristics of patients (Reduced)",
+    footer  = "Values are β coefficients (95% CI) from a linear regression model. Outcome: overall inpatient experience score (C1)."
+  )
+
+flex_table_2_A_reduced
+
+table_2_A_step <- gtsummary::tbl_regression(
+  model_2_A_step,
+  intercept = FALSE,      # không hiển thị hệ số chặn
+  estimate_fun = ~ style_sigfig(.x, digits = 2)  # làm tròn 2 chữ số có ý nghĩa
+) |>
+  bold_labels() |>
+  modify_caption("**Table B. Multivariable linear regression for patient experience (PPE-15, Section B)**")
+
+flex_table_2_A_step <- as_flex_table(table_2_A_step) |>
+  style_flex_jama(
+    caption = "Multivariable linear regression for Demographic Characteristics of patients (Stepped)",
+    footer  = "Values are β coefficients (95% CI) from a linear regression model. Outcome: overall inpatient experience score (C1)."
+  )
+
+flex_table_2_A_step
+```
+
+#Comparission 3 model linear 
+```{r Comparission_table_Model_2_A, echo = FALSE, results = "asis"}
+get_model_strength <- function(model, name, data, type = c("lm","glm")) {
+  type <- match.arg(type)
+  if (type == "lm") {
+    sm <- summary(model)
+    perf <- performance::model_performance(model)
+    tibble(
+      Model = name,
+      Type = "Linear",
+      R2_or_Nagelkerke = round(sm$r.squared, 3),
+      Adj_R2_or_McFadden = round(sm$adj.r.squared, 3),
+      AIC = round(AIC(model), 2),
+      RMSE_or_AUC = round(perf$RMSE, 3)
+    )
+  } else {
+    pr2 <- pscl::pR2(model)
+    roc_obj <- tryCatch(
+      pROC::roc(data$c1_overall_experience_binary, fitted(model), quiet = TRUE),
+      error = function(e) NULL
+    )
+    auc_val <- if (!is.null(roc_obj)) as.numeric(pROC::auc(roc_obj)) else NA
+    tibble(
+      Model = name,
+      Type = "Logistic",
+      R2_or_Nagelkerke = round(pr2["r2CU"], 3),       # Nagelkerke
+      Adj_R2_or_McFadden = round(pr2["McFadden"], 3), # McFadden
+      AIC = round(AIC(model), 2),
+      RMSE_or_AUC = round(auc_val, 3)
+    )
+  }
+}
+
+results_strength <- bind_rows(
+  get_model_strength(model_full_raw,       "Model A: Raw (all variables)", data1_processed, type = "lm"),
+  get_model_strength(model_2_A_full_grp,   "Model B: Grouped (full)",      data1_processed, type = "lm"),
+  get_model_strength(model_2_A_reduced,    "Model C: Reduced (manual)",    data1_processed, type = "lm"),
+  get_model_strength(model_2_A_step,       "Model D: Stepped (stepwise)", data1_processed, type = "lm")
+)
+
+results_strength <- results_strength %>%
+  rename(
+    `Model type` = Type,
+    `R² / Nagelkerke R²` = R2_or_Nagelkerke,
+    `Adj R² / McFadden R²` = Adj_R2_or_McFadden,
+    `AIC` = AIC,
+    `RMSE / AUC` = RMSE_or_AUC
+  )
+
+ft_strength <- flextable(results_strength) %>%
+  font(font = "Arial", part = "all") %>%
+  fontsize(size = 10, part = "all") %>%
+  bold(part = "header") %>%
+  align(part = "all", align = "center") %>%
+  align(j = "Model", align = "left", part = "all") %>%
+  autofit() %>%
+  set_caption("Comparison of model strength across four regression models") %>%
+  add_footer_lines(
+    "Linear models report R², Adjusted R², and RMSE. The logistic model reports Nagelkerke R², McFadden R², and AUC."
+  ) %>%
+  bg(i = seq(1, nrow(results_strength), 2), bg = "#F8F9FA", part = "body")
+
+ft_strength
+```
+
+```{r Table_2_Model_B, echo = FALSE, results = "asis"}
+model_2_B_full <- lm(C1_overall_hospital_experience_score ~ 
+                       B1_doctor_clear_answers + 
+                       B2_nurse_clear_answers + 
+                       B3_consistent_staff_answers + 
+                       B4_doctor_clear_communication + 
+                       B5_doctor_anxiety_counseling + 
+                       B6_nurse_anxiety_counseling + 
+                       B7_want_treatment_decision_participation + 
+                       B8_respectful_treatment_by_staff + 
+                       B9_shared_concerns_with_staff + 
+                       B10_1_staff_helped_pain_control + 
+                       B11_family_communication_with_doctor + 
+                       B12_family_received_recovery_information + 
+                       B13_clear_medication_instructions + 
+                       B14_medication_side_effects_explained + 
+                       B15_warning_signs_explained, 
+                     data = data1_processed)
+##Adj R^2 của mô hình này là 0.3332415
+```
+
+#Model Linear Regression B: PPE - 15 Questions 
+```{r Prints_table_Model_2_B, echo = FALSE, results = "asis"}
+table_2_b_full <- gtsummary::tbl_regression(
+  model_2_B_full,
+  intercept = FALSE,      # không hiển thị hệ số chặn
+  estimate_fun = ~ style_sigfig(.x, digits = 2)  # làm tròn 2 chữ số có ý nghĩa
+) |>
+  bold_labels() |>
+  modify_caption("**Table B. Multivariable linear regression for patient experience (PPE-15, Section B)**")
+
+flex_table_2_B_full <- as_flex_table(table_2_b_full) |>
+  style_flex_jama(
+    caption = "Multivariable linear regression for PPE-15 Questions",
+    footer  = "Values are β coefficients (95% CI) from a linear regression model. Outcome: overall inpatient experience score (C1)."
+  )
+
+flex_table_2_B_full
+```
+
+```{r Table_2_A_Logistic, echo = FALSE, results = "asis"}
+data1_processed <- data1_processed %>% 
+  mutate(c1_overall_experience_binary_num = ifelse(c1_overall_experience_binary == "Positive", 1, 0))
+
+model_2_A_full_grp_logistic <- glm(c1_overall_experience_binary ~ 
+               A2_gender + 
+               age_category + 
+               A4_education_level +
+               A5_marital_status +
+               A6_living_situation + 
+               A7_occupation_broad + 
+               A8_monthly_income + 
+               A9_payment_method + 
+               A10_hospital_treated + 
+               A12_0_admission_reason_fix + 
+               length_of_stay_group + 
+               A14_other_chronic_disease +  
+               A15_health_insurance + 
+               A16_used_insurance_for_payment + 
+               A17_discharge_condition + 
+               A18_physical_health_perception + 
+               A19_mental_health_perception, 
+             data = data1_processed, 
+             family = binomial)
+
+model_2_A_full_grp_logistic_end <- glm(c1_overall_experience_binary ~ 
+               A2_gender + 
+               age_category + 
+               # A4_education_level +
+               A5_marital_status +
+               # A6_living_situation + 
+               A7_occupation_broad + 
+               # A8_monthly_income + 
+               A9_payment_method + 
+               A10_hospital_treated + 
+               A12_0_admission_reason_fix + 
+               length_of_stay_group + 
+               # A14_other_chronic_disease +  
+               A15_health_insurance + 
+               A16_used_insurance_for_payment + 
+               A17_discharge_condition + 
+               # A18_physical_health_perception + 
+               A19_mental_health_perception, 
+             data = data1_processed, 
+             family = binomial)
+
+model_2_A_full__grp_logistic_fix <- stepAIC (model_2_A_full_grp_logistic, direction = "both", trace = FALSE)
+```
+
+#Model A Logistic Regression: Demographic Characteristics of patients
+```{r Print_table_2_modelB, echo = FALSE, results = "asis"}
+tbl_A_logistic_full <- tbl_regression(
+  model_2_A_full_grp_logistic,
+  exponentiate = TRUE, # OR
+  intercept = FALSE
+) |>
+  bold_labels() |>
+  modify_caption("**Multivariable logistic regression (Full grouped)**")
+
+flex_table_A_logistic_full <- as_flex_table(tbl_A_logistic_full) |>
+  style_flex_jama(
+    caption = "Multivariable logistic regression (Full grouped)",
+    footer  = "Values are Odds Ratio (95% CI)."
+  )
+
+flex_table_A_logistic_full
+
+tbl_A_logistic_end <- tbl_regression(
+  model_2_A_full_grp_logistic_end,
+  exponentiate = TRUE,
+  intercept = FALSE
+) |>
+  bold_labels() |>
+  modify_caption("**Multivariable logistic regression (Reduced, manual)**")
+
+flex_table_A_logistic_end <- as_flex_table(tbl_A_logistic_end) |>
+  style_flex_jama(
+    caption = "Multivariable logistic regression (Reduced, manual)",
+    footer  = "Values are Odds Ratio (95% CI)."
+  )
+
+flex_table_A_logistic_end
+
+tbl_A_logistic_fix <- tbl_regression(
+  model_2_A_full__grp_logistic_fix,
+  exponentiate = TRUE,
+  intercept = FALSE
+) |>
+  bold_labels() |>
+  modify_caption("**Multivariable logistic regression (StepAIC both)**")
+
+flex_table_A_logistic_fix <- as_flex_table(tbl_A_logistic_fix) |>
+  style_flex_jama(
+    caption = "Multivariable logistic regression (StepAIC both)",
+    footer  = "Values are Odds Ratio (95% CI)."
+  )
+
+flex_table_A_logistic_fix
+```
+
+#Comparision Model B
+```{r Comparision_assumption_table_model_logistic, echo = FALSE, results = "asis"}
+get_metrics <- function(model, model_name, data, y_num, g = 10) {
+  pr2 <- pscl::pR2(model)
+  aic <- AIC(model)
+  roc_obj <- pROC::roc(response = data[[y_num]], predictor = fitted(model), quiet = TRUE)
+  auc_val <- as.numeric(pROC::auc(roc_obj))
+  acc <- mean(ifelse(fitted(model) >= 0.5, 1, 0) == data[[y_num]])  # cut 0.5
+  hl <- tryCatch(ResourceSelection::hoslem.test(data[[y_num]], fitted(model), g = g),
+                 error = function(e) NULL)
+  tibble(
+    Model = model_name,
+    AIC = aic,
+    McFadden_R2   = unname(pr2["McFadden"]),
+    CoxSnell_R2   = unname(pr2["r2ML"]),
+    Nagelkerke_R2 = unname(pr2["r2CU"]),
+    AUC = auc_val,
+    Accuracy_0_5 = acc,
+    HL_p = if (!is.null(hl)) hl$p.value else NA_real_
+  )
+}
+
+metrics_df <- bind_rows(
+  get_metrics(model_2_A_full_grp_logistic,      "Full grouped",    data1_processed, "c1_overall_experience_binary_num", g = 10),
+  get_metrics(model_2_A_full_grp_logistic_end,  "Reduced manual",  data1_processed, "c1_overall_experience_binary_num", g = 10),
+  get_metrics(model_2_A_full__grp_logistic_fix, "StepAIC both",    data1_processed, "c1_overall_experience_binary_num", g = 10)
+) %>%
+  mutate(
+    AIC = round(AIC, 1),
+    McFadden_R2   = round(McFadden_R2, 3),
+    CoxSnell_R2   = round(CoxSnell_R2, 3),
+    Nagelkerke_R2 = round(Nagelkerke_R2, 3),
+    AUC = round(AUC, 3),
+    Accuracy_0_5 = percent(Accuracy_0_5, accuracy = 0.1),
+    HL_p = ifelse(is.na(HL_p), NA, formatC(HL_p, digits = 3, format = "f"))
+  )
+
+ft_metrics <- flextable(metrics_df) %>%
+  font(font = "Arial", part = "all") %>%
+  fontsize(size = 10, part = "all") %>%
+  bold(part = "header") %>%
+  align(part = "all", align = "center") %>%
+  align(j = "Model", align = "left", part = "all") %>%
+  autofit() %>%
+  set_caption("Model comparison (Logistic regression)") %>%
+  add_footer_lines("R² are pseudo-R²; HL_p: Hosmer–Lemeshow p-value with g=10; Accuracy cutoff = 0.5.") %>%
+  bg(i = seq(1, nrow(metrics_df), 2), bg = "#F8F9FA", part = "body")
+
+ft_metrics
+```
+
+
+
+

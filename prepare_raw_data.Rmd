@@ -1,18 +1,15 @@
 ---
-title: "Hospital Inpatient Experience Survey 2024–2025: Initial Data Exploration"
-author: "Your Name"
+title: "Hospital Survey Data Preparation"
+author: "Đam Mê Nghiên Cứu"
 date: "`r Sys.Date()`"
 output: html_document
 ---
 
 ```{r setup, include = FALSE}
-knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
 ```
 
-## 1. Packages
-
-```{r packages, warning =F, message=F}
-
+```{r packages, warning = FALSE, message = FALSE}
 # Load packages
 library(readxl)
 library(janitor)
@@ -23,183 +20,463 @@ library(stringr)
 library(lubridate)
 library(readr)
 library(writexl)
-
+library(gtsummary)
+library(gt)
+library(forcats)
 ```
-
-## 2. Import data
 
 ```{r import}
-# Because the Excel file sits in the project root, we can read it directly
-survey_raw <- read_excel("hospital_survey_mother.xlsx")
-
+# Import the hospital survey data
+data1 <- read_excel("7_hospital_data.xlsx")
 ```
 
+```{r data_cleaning}
+# Clean length of stay variable
+# data1 <- data1 %>%
+#   mutate(
+#     A13_length_of_stay_clean = case_when(
+#       # Extract numbers from various formats
+#       str_detect(A13_length_of_stay_text, "^\\d+$") ~ as.numeric(A13_length_of_stay_text),
+#       str_detect(A13_length_of_stay_text, "^\\d+\\s*(ngày|ngay|Ngày)") ~ 
+#         as.numeric(str_extract(A13_length_of_stay_text, "^\\d+")),
+#       str_detect(A13_length_of_stay_text, "tuần") ~ as.numeric(str_extract(A13_length_of_stay_text, "^\\d+")) * 7,
+#       str_detect(A13_length_of_stay_text, "lần") ~ NA_real_,  # "13 lần" doesn't make sense for length of stay
+#       TRUE ~ as.numeric(A13_0_length_of_stay_code)  # Use the numeric code as fallback
+#     )
+#   )
+
+data1 <- data1 %>%
+  mutate(
+    # Rút số ngày từ văn bản A13_length_of_stay_text
+    A13_length_of_stay_clean = case_when(
+      # chỉ là số (vd: "5")
+      str_detect(A13_length_of_stay_text, "^\\s*\\d+\\s*$") ~ as.numeric(str_extract(A13_length_of_stay_text, "\\d+")),
+      # có chữ "ngày/ngay/Ngày" (vd: "10 ngày")
+      str_detect(str_to_lower(A13_length_of_stay_text), "\\d+\\s*ng(à|a)y") ~ as.numeric(str_extract(A13_length_of_stay_text, "\\d+")),
+      # có "tuần/tuan" (vd: "2 tuần" → 14 ngày)
+      str_detect(str_to_lower(A13_length_of_stay_text), "\\d+\\s*tu(ầ|a)n") ~ as.numeric(str_extract(A13_length_of_stay_text, "\\d+")) * 7,
+      # "lần" không phải số ngày → NA
+      str_detect(str_to_lower(A13_length_of_stay_text), "lần") ~ NA_real_,
+      # fallback: lấy số đầu tiên nếu có
+      str_detect(A13_length_of_stay_text, "\\d+") ~ as.numeric(str_extract(A13_length_of_stay_text, "\\d+")),
+      TRUE ~ NA_real_
+    ))
+```
+
+```{r factor_conversion}
+# Convert variables to factors (all unordered)
+
+# === DEMOGRAPHIC VARIABLES ===
+data1$A2_gender <- factor(data1$A2_gender, 
+                         levels = c("Nam", "Nữ"))
+
+# Education level (unordered)
+data1$A4_education_level <- factor(data1$A4_education_level,
+                                  levels = c("Dưới THPT", "THPT", "Trung cấp, cao đẳng", "Đại học, sau đại học"))
+
+# Marital status (unordered)
+data1$A5_marital_status <- factor(data1$A5_marital_status)
+
+# Living situation (unordered)
+data1$A6_living_situation <- factor(data1$A6_living_situation)
+
+# Occupation (unordered)
+data1$A7_occupation_text <- factor(data1$A7_occupation_text)
+data1$A7_0_occupation_code <- factor(data1$A7_0_occupation_code)
+
+# Monthly income (unordered)
+data1$A8_monthly_income <- factor(data1$A8_monthly_income,
+                                 levels = c("Dưới 5 triệu", 
+                                            "Từ 5 đến 10 triệu", 
+                                            "Trên 10 triệu", 
+                                            "Không có thu nhập, sống phụ thuộc"))
+
+# Payment method (unordered)
+data1$A9_payment_method <- factor(data1$A9_payment_method)
+
+# Hospital and department info (unordered)
+data1$A10_hospital_treated <- factor(data1$A10_hospital_treated)
+data1$A11_clinical_department_text <- factor(data1$A11_clinical_department_text)
+data1$A11_1_clinical_department_code <- factor(data1$A11_1_clinical_department_code)
+data1$A11_0_specific_department_text <- factor(data1$A11_0_specific_department_text)
+data1$A11_1_0_specific_department_name <- factor(data1$A11_1_0_specific_department_name)
+
+# Admission reason (unordered)
+data1$A12_admission_reason_text <- factor(data1$A12_admission_reason_text)
+data1$A12_0_admission_reason_code <- factor(data1$A12_0_admission_reason_code)
+
+# Binary variables (Yes/No type)
+data1$A14_other_chronic_disease <- factor(data1$A14_other_chronic_disease,
+                                         levels = c("Không", "Có"))
+
+data1$A15_health_insurance <- factor(data1$A15_health_insurance,
+                                   levels = c("Không", "Có"))
+
+data1$A16_used_insurance_for_payment <- factor(data1$A16_used_insurance_for_payment,
+                                              levels = c("Không", "Có"))
+
+# Discharge condition (unordered)
+data1$A17_discharge_condition <- factor(data1$A17_discharge_condition,
+                                       levels = c("Tạm ổn định", "Ổn định", "Khỏi bệnh"))
+
+# Health perceptions (unordered)
+data1$A18_physical_health_perception <- factor(data1$A18_physical_health_perception,
+                                              levels = c("Không tốt", "Tạm được", "Bình thường", "Tốt", "Rất tốt"))
+
+data1$A19_mental_health_perception <- factor(data1$A19_mental_health_perception,
+                                            levels = c("Không tốt", "Tạm được", "Bình thường", "Tốt", "Rất tốt"))
+
+# === COMMUNICATION AND CARE QUALITY VARIABLES ===
+
+# Standard frequency scale for most B variables
+frequency_levels <- c("Không", "Thỉnh thoảng", "Luôn luôn")
+
+data1$B1_doctor_clear_answers <- factor(data1$B1_doctor_clear_answers,
+                                       levels = c("Không", "Thỉnh thoảng", "Luôn luôn", "Tôi không cần hỏi"))
+
+data1$B2_nurse_clear_answers <- factor(data1$B2_nurse_clear_answers,
+                                      levels = c("Không", "Thỉnh thoảng", "Luôn luôn", "Tôi không cần hỏi"))
+
+data1$B3_consistent_staff_answers <- factor(data1$B3_consistent_staff_answers,
+                                           levels = frequency_levels)
+
+data1$B4_doctor_clear_communication <- factor(data1$B4_doctor_clear_communication,
+                                             levels = frequency_levels)
+
+data1$B5_doctor_anxiety_counseling <- factor(data1$B5_doctor_anxiety_counseling,
+                                            levels = c("Không", "Thỉnh thoảng", "Luôn luôn", "Tôi không lo lắng"))
+
+data1$B6_nurse_anxiety_counseling <- factor(data1$B6_nurse_anxiety_counseling,
+                                           levels = c("Không", "Thỉnh thoảng", "Luôn luôn", "Tôi không lo lắng"))
+
+data1$B7_want_treatment_decision_participation <- factor(data1$B7_want_treatment_decision_participation,
+                                                        levels = frequency_levels)
+
+data1$B8_respectful_treatment_by_staff <- factor(data1$B8_respectful_treatment_by_staff,
+                                                levels = frequency_levels)
+
+data1$B9_shared_concerns_with_staff <- factor(data1$B9_shared_concerns_with_staff,
+                                             levels = c("Tôi không chia sẻ lo lắng", "Thỉnh thoảng", "Luôn luôn"))
+
+# Binary pain variable
+data1$B10_experienced_pain <- factor(data1$B10_experienced_pain,
+                                    levels = c("Không", "Có"))
+
+data1$B10_1_staff_helped_pain_control <- factor(data1$B10_1_staff_helped_pain_control,
+                                               levels = frequency_levels)
+
+# Family communication variables
+data1$B11_family_communication_with_doctor <- factor(data1$B11_family_communication_with_doctor,
+                                                    levels = c("Không", "Thỉnh thoảng", "Luôn luôn", 
+                                                              "Gia đình/người thân tôi không cần",
+                                                              "Không có gia đình/người thân tham gia"))
+
+data1$B12_family_received_recovery_information <- factor(data1$B12_family_received_recovery_information,
+                                                        levels = c("Không", "Thỉnh thoảng", "Luôn luôn",
+                                                                  "Gia đình/người thân tôi không cần",
+                                                                  "Không có gia đình/người thân tham gia"))
+
+# Medication instruction variables
+data1$B13_clear_medication_instructions <- factor(data1$B13_clear_medication_instructions,
+                                                 levels = c("Không", "Thỉnh thoảng", "Luôn luôn",
+                                                           "Tôi không được phát thuốc về nhà",
+                                                           "Tôi không biết, người nhà lấy hộ tôi",
+                                                           "Tôi không cần giải thích"))
+
+data1$B14_medication_side_effects_explained <- factor(data1$B14_medication_side_effects_explained,
+                                                     levels = c("Không", "Thỉnh thoảng", "Luôn luôn",
+                                                               "Tôi không cần giải thich"))
+
+data1$B15_warning_signs_explained <- factor(data1$B15_warning_signs_explained,
+                                           levels = c("Không", "Thỉnh thoảng", "Luôn luôn",
+                                                     "Tôi không cần giải thích"))
+
+# === SATISFACTION AND LOYALTY VARIABLES ===
+
+# Trust (unordered)
+data1$C2_trust_hospital_quality <- factor(data1$C2_trust_hospital_quality,
+                                         levels = c("Không tin tưởng", "Bình thường", "Rất tin tưởng"))
+
+# Recommendation (unordered)
+data1$C3_would_recommend_hospital <- factor(data1$C3_would_recommend_hospital,
+                                           levels = c("Không giới thiệu", "Không chắc chắn", "Chắc chắn giới thiệu"))
+
+# Loyalty (unordered)
+data1$C4_hospital_loyalty <- factor(data1$C4_hospital_loyalty,
+                                   levels = c("Không gắn bó", "Bình thường", "Rất gắn bó"))
+
+# Intention to return (unordered)
+data1$C5_intention_to_return <- factor(data1$C5_intention_to_return,
+                                      levels = c("Không", "Không chắc chắn", "Có"))
+
+# Return reason (unordered)
+data1$C6_return_reason_text <- factor(data1$C6_return_reason_text)
+```
+
+
+```{r department_cleaning}
+# Function to clean and standardize department names
+clean_department_names <- function(dept_vector) {
+  
+  # Convert to character and handle NAs
+  dept_clean <- as.character(dept_vector)
+  dept_clean[is.na(dept_clean)] <- "Unknown"
+  
+  # Convert to lowercase for processing
+  dept_lower <- str_to_lower(dept_clean)
+  
+  # Remove extra whitespace and special characters
+  dept_lower <- str_trim(dept_lower)
+  dept_lower <- str_replace_all(dept_lower, "[^a-zA-Z0-9\\s]", " ")
+  dept_lower <- str_replace_all(dept_lower, "\\s+", " ")
+  
+  # Create standardized department names
+  dept_standardized <- case_when(
+    
+    # ONCOLOGY DEPARTMENTS
+    str_detect(dept_lower, "ung bu?o?u|ung th[uw]|oncolog") ~ "Ung bướu",
+    
+    # INTERNAL MEDICINE DEPARTMENTS
+    str_detect(dept_lower, "n[ôo]i.*t[oô]ng h[ôo]p|noi.*tong hop") ~ "Nội tổng hợp",
+    str_detect(dept_lower, "n[ôo]i.*ti[êe]u.*h[óo]a?|noi.*tieu.*hoa?") ~ "Nội tiêu hóa",
+    str_detect(dept_lower, "n[ôo]i.*tim.*m[ạa]ch|noi.*tim.*mach|tm") ~ "Nội tim mạch",
+    str_detect(dept_lower, "n[ôo]i.*th[ậa]n|noi.*than") ~ "Nội thận tiết niệu",
+    str_detect(dept_lower, "n[ôo]i.*h[ôo].*h[ấa]p|noi.*ho.*hap") ~ "Nội hô hấp",
+    str_detect(dept_lower, "n[ôo]i.*th[ầa]n.*kinh|noi.*than.*kinh") ~ "Nội thần kinh",
+    str_detect(dept_lower, "n[ôo]i.*ti[êe]t|noi.*tiet") ~ "Nội tiết",
+    
+    # SURGICAL DEPARTMENTS
+    str_detect(dept_lower, "ngo[ạa]i.*t[oô]ng h[ôo]p|ngoai.*tong hop") ~ "Ngoại tổng hợp",
+    str_detect(dept_lower, "ngo[ạa]i.*ti[êe]u.*h[óo]a?|ngoai.*tieu.*hoa?") ~ "Ngoại tiêu hóa",
+    str_detect(dept_lower, "ngo[ạa]i.*th[ậa]n|ngo[ạa]i.*ti[êe]t.*ni[êe]u|ngoai.*than|ngoai.*tiet.*nieu") ~ "Ngoại tiết niệu",
+    str_detect(dept_lower, "ngo[ạa]i.*th[ầa]n.*kinh|ngoai.*than.*kinh|tkcs|tk.*cs") ~ "Ngoại thần kinh",
+    str_detect(dept_lower, "ngo[ạa]i.*l[ôo]ng.*ng[ưu]c|ngoai.*long.*nguc") ~ "Ngoại lồng ngực",
+    str_detect(dept_lower, "ch[ấa]n.*th[ưu]ng|chan.*thuong|ctch|ct.*b[ỏo]ng|bỏng|bong") ~ "Chấn thương bỏng",
+    str_detect(dept_lower, "ngo[ạa]i.*b[ụu]ng|ngoai.*bung") ~ "Ngoại bụng",
+    str_detect(dept_lower, "h[ậa]u.*m[ôo]n|hau.*mon") ~ "Ngoại hậu môn trực tràng",
+    
+    # SPECIALIZED DEPARTMENTS
+    str_detect(dept_lower, "c[ơo].*x[ươu]ng.*kh[ớo]p|co.*xuong.*khop|cxk") ~ "Cơ xương khớp",
+    str_detect(dept_lower, "ph[ụu].*s[ảa]n|phu.*san|s[ảa]n") ~ "Phụ sản",
+    str_detect(dept_lower, "r[ăa]ng.*h[àa]m.*m[ặa]t|rang.*ham.*mat") ~ "Răng hàm mặt",
+    str_detect(dept_lower, "tai.*m[ũu]i.*h[ọo]ng|tai.*mui.*hong") ~ "Tai mũi họng",
+    str_detect(dept_lower, "m[ắa]t") ~ "Mắt",
+    str_detect(dept_lower, "da.*li[êe]u|da.*lieu") ~ "Da liễu",
+    
+    # SPECIALTY TREATMENT CENTERS
+    str_detect(dept_lower, "truy[êe]n.*nhi[êe]m|truyen.*nhiem|l[ây]y.*nhi[êe]m") ~ "Truyền nhiễm",
+    str_detect(dept_lower, "b[êe]nh.*nhi[êe]t.*d[ôo]i|benh.*nhiet.*doi") ~ "Bệnh nhiệt đới",
+    str_detect(dept_lower, "vi.*r[úu]t|virus.*k[yý].*sinh") ~ "Vi rút ký sinh trùng",
+    str_detect(dept_lower, "huy[êe]t.*h[ọo]c|huyet.*hoc") ~ "Huyết học lâm sàng",
+    str_detect(dept_lower, "y.*h[ọo]c.*c[ổo].*truy[êe]n|yhct") ~ "Y học cổ truyền",
+    str_detect(dept_lower, "ph[ẫa]u.*thu[ậa]t.*t[ạa]o.*h[ìi]nh|phau.*thuat.*tao.*hinh") ~ "Phẫu thuật tạo hình",
+    str_detect(dept_lower, "ph[ẫa]u.*thu[ậa]t.*th[ẩa]m.*m[ỹy]|phau.*thuat.*tham.*my|pttm") ~ "Phẫu thuật thẩm mỹ",
+    str_detect(dept_lower, "ch[ốống]ng.*d[ộo]c|chong.*doc") ~ "Chống độc",
+    str_detect(dept_lower, "h[ồo]i.*s[ứu]c|hoi.*suc") ~ "Hồi sức",
+    str_detect(dept_lower, "d[ịi].*[ứu]ng|di.*ung") ~ "Dị ứng miễn dịch",
+    str_detect(dept_lower, "b[êe]nh.*ngh[êề].*nghi[êe]p|benh.*nghe.*nghiep") ~ "Bệnh nghề nghiệp",
+    str_detect(dept_lower, "[dđ][ộo]t.*qu[yỵ]|dot.*quy") ~ "Đột quỵ",
+    
+    # COMBINATION DEPARTMENTS (common in smaller hospitals)
+    str_detect(dept_lower, "tim.*m[ạa]ch.*kh[ớo]p.*n[ộo]i.*ti[êe]t|tim.*mach.*khop.*noi.*tiet") ~ "Tim mạch - Khớp - Nội tiết",
+    
+    # TREATMENT BY REQUEST/PRIVATE
+    str_detect(dept_lower, "theo.*y[êe]u.*c[ầa]u|tyc|pttyc") ~ "Điều trị theo yêu cầu",
+    str_detect(dept_lower, "qu[ốố]c.*t[êế]|quoc.*te") ~ "Khoa quốc tế",
+    
+    # DEPARTMENT CODES (when only codes are given)
+    str_detect(dept_lower, "^[abc]\\d+[a-z]?$|^\\d+$") ~ "Mã khoa",
+    
+    # INVALID/UNCLEAR ENTRIES
+    str_detect(dept_lower, "^\\d+\\s*ng[àày]y?$|hahhaha|th[ạa]anj|^\\.$") ~ "Không xác định",
+    
+    # DEFAULT CASES
+    str_detect(dept_lower, "ngo[ạa]i|ngoai") ~ "Ngoại khoa",
+    str_detect(dept_lower, "n[ộô]i|noi") ~ "Nội khoa",
+    TRUE ~ "Khác"
+  )
+  
+  return(dept_standardized)
+}
+
+# Apply cleaning to the department variable
+data1$A11_1_clinical_department_cleaned <- clean_department_names(data1$A11_1_clinical_department_code)
+
+# Convert to factor
+data1$A11_1_clinical_department_cleaned <- factor(data1$A11_1_clinical_department_cleaned)
+```
+
+
+```{r occupation_cleaning}
+# Function to clean occupation data
+clean_occupation <- function(occupation_vector) {
+  
+  # Convert to character and handle NAs
+  occ_clean <- as.character(occupation_vector)
+  occ_clean[is.na(occ_clean)] <- "Không xác định"
+  
+  # Convert to lowercase for processing
+  occ_lower <- str_to_lower(occ_clean)
+  
+  # Remove extra whitespace
+  occ_lower <- str_trim(occ_lower)
+  
+  # Create standardized occupation categories
+  occ_standardized <- case_when(
+    
+    # AGRICULTURE & FARMING
+    str_detect(occ_lower, "nông dân|làm nông|làm ruộng|nông nghiệp|làm vườn|làm rẫy|lâm nghiệp") ~ "Nông nghiệp",
+    
+    # STUDENTS & EDUCATION
+    str_detect(occ_lower, "học sinh|sinh viên|đang đi học|còn đi học|hs") ~ "Học sinh/Sinh viên",
+    str_detect(occ_lower, "giáo viên") ~ "Giáo viên",
+    
+    # GOVERNMENT & PUBLIC SERVICE
+    str_detect(occ_lower, "cán bộ.*nhà nước|cán bộ.*viên chức") ~ "Cán bộ viên chức",
+    str_detect(occ_lower, "quân nhân|bộ đội|lực lượng vũ trang|cựu chiến binh") ~ "Quân đội/An ninh",
+    
+    # OFFICE & PROFESSIONAL WORKERS
+    str_detect(occ_lower, "văn phòng|nvvp|nv văn phòng|nhân viên văn phòng") ~ "Nhân viên văn phòng",
+    str_detect(occ_lower, "kỹ sư|cơ khí") ~ "Kỹ sư/Kỹ thuật",
+    str_detect(occ_lower, "kế toán") ~ "Kế toán",
+    str_detect(occ_lower, "ngân hàng") ~ "Ngân hàng/Tài chính",
+    
+    # BUSINESS & TRADE
+    str_detect(occ_lower, "kinh doanh|doanh nghiệp|xuất nhập khẩu") ~ "Kinh doanh",
+    str_detect(occ_lower, "bán hàng|sale") ~ "Bán hàng",
+    
+    # MANUAL WORKERS
+    str_detect(occ_lower, "công nhân|làm công nhân") ~ "Công nhân",
+    str_detect(occ_lower, "tài xế") ~ "Tài xế",
+    str_detect(occ_lower, "tiệm tóc|rửa xe") ~ "Dịch vụ cá nhân",
+    
+    # FREELANCE & SELF-EMPLOYED
+    str_detect(occ_lower, "lao động tự do|tự do") ~ "Lao động tự do",
+    
+    # RETIRED & ELDERLY
+    str_detect(occ_lower, "nghỉ hưu") ~ "Nghỉ hưu",
+    str_detect(occ_lower, "già|tuổi già|yếu|già yếu|tuoi gia") ~ "Cao tuổi",
+    
+    # HOMEMAKERS & DEPENDENTS
+    str_detect(occ_lower, "nội trợ|ở nhà|nghỉ ở nhà") ~ "Nội trợ",
+    str_detect(occ_lower, "phụ thuộc|sống phụ thuộc|bảo trợ xã hội") ~ "Phụ thuộc",
+    
+    # UNEMPLOYED & NOT WORKING
+    str_detect(occ_lower, "thất nghiệp|không làm|không đi làm|nghỉ mất sức|không lao động") ~ "Không làm việc",
+    str_detect(occ_lower, "không biết|không|ko") ~ "Không xác định",
+    
+    # OTHER SPECIFIC OCCUPATIONS
+    str_detect(occ_lower, "du lịch|môi trường|vật liệu|quản lý") ~ "Khác",
+    
+    # DEFAULT
+    TRUE ~ "Khác"
+  )
+  
+  return(occ_standardized)
+}
+
+# Apply occupation cleaning
+data1$A7_occupation_cleaned <- clean_occupation(data1$A7_occupation_text)
+
+# Create broader occupation categories for analysis
+data1$A7_occupation_broad <- case_when(
+  data1$A7_occupation_cleaned %in% c("Cán bộ viên chức", "Quân đội/An ninh", "Giáo viên", 
+                                      "Kỹ sư/Kỹ thuật", "Ngân hàng/Tài chính", "Kế toán", 
+                                      "Nhân viên văn phòng") ~ "Professional/Office Workers",
+  
+  data1$A7_occupation_cleaned %in% c("Kinh doanh", "Bán hàng", "Lao động tự do", 
+                                      "Dịch vụ cá nhân") ~ "Business/Service Workers",
+  
+  data1$A7_occupation_cleaned %in% c("Công nhân", "Tài xế", "Nông nghiệp") ~ "Manual/Agricultural Workers",
+  
+  data1$A7_occupation_cleaned %in% c("Học sinh/Sinh viên") ~ "Students",
+  
+  data1$A7_occupation_cleaned %in% c("Nghỉ hưu", "Cao tuổi", "Nội trợ", 
+                                      "Phụ thuộc", "Không làm việc") ~ "Not Working/Retired",
+  
+  data1$A7_occupation_cleaned %in% c("Khác", "Không xác định") ~ "Other/Unknown",
+  
+  TRUE ~ "Other/Unknown"
+)
+
+# Convert to factor (unordered)
+data1$A7_occupation_broad <- factor(data1$A7_occupation_broad)
+```
+
+
+```{r final_processing}
+# Create age variable and final data processing
+current_year <- 2025 # Adjust as needed
+data1_processed <- data1 %>%
+  mutate(
+    # Create age from birth year
+    age = current_year - A3_birth_year,
+    
+    # Create age categories (unordered)
+    age_category = case_when(
+      age < 18 ~ "< 18",
+      age >= 18 & age < 30 ~ "18-29", 
+      age >= 30 & age < 50 ~ "30-49.99",
+      age >= 50 & age < 75 ~ "50-74.99",
+      age >= 75 ~ "> 75",
+      TRUE ~ NA_character_
+    ),
+    age_category = factor(age_category, levels = c("< 18", "18-29", "30-49.99", "50-74.99", "> 75")),
+    
+    # Clean length of stay - handle potential text values
+    # length_of_stay_clean = case_when(
+    #   !is.na(A13_0_length_of_stay_code) ~ A13_0_length_of_stay_code,
+    #   !is.na(A13_length_of_stay_clean) ~ A13_length_of_stay_clean,
+    #   TRUE ~ as.numeric(A13_length_of_stay_text)
+    # ),
+    
+    length_of_stay_clean = case_when(
+      !is.na(A13_0_length_of_stay_code) ~ as.numeric(A13_0_length_of_stay_code),
+      !is.na(A13_length_of_stay_clean)   ~ A13_length_of_stay_clean,
+      TRUE                               ~ NA_real_
+    ),
+
+        length_of_stay_group = case_when(
+      length_of_stay_clean >= 3  & length_of_stay_clean <= 7   ~ "Từ 3 đến 7 ngày",
+      length_of_stay_clean >= 8  & length_of_stay_clean <= 14  ~ "Từ 8 đến 14 ngày",
+      length_of_stay_clean >= 15                               ~ "Từ 15 ngày trở lên",
+      TRUE                                                     ~ NA_character_   # <3 ngày hoặc thiếu dữ liệu
+    ) %>% 
+      factor(levels = c("Từ 3 đến 7 ngày", "Từ 8 đến 14 ngày", "Từ 15 ngày trở lên")),
+    
+    # Create binary overall experience outcome variable
+    c1_overall_experience_binary = case_when(
+      C1_overall_hospital_experience_score >= 9 ~ "Positive",
+      C1_overall_hospital_experience_score < 9 ~ "Negative",
+      TRUE ~ NA_character_
+    ),
+    c1_overall_experience_binary = factor(c1_overall_experience_binary, 
+                                         levels = c("Negative", "Positive"))
+  ) %>%
+  # Drop unused factor levels
+  mutate(across(where(is.factor), fct_drop))
+```
+
+```{r fix_A9_and_A12}
+data1_processed <- data1_processed %>% 
+  mutate(A9_payment_method_group = case_when(
+A9_payment_method %in% c("Được BHXH chi trả", "Tự chi trả được") ~ 
+"Không gặp vấn đề khi chi trả viện phí",
+A9_payment_method %in% c("Phải vay mượn", "Vừa được BHXH chi trả và vừa vay mượn") ~ 
+"Gặp vấn đề khi chi trả viện phí", 
+TRUE ~ NA_character_))
+
+data1_processed <- data1_processed%>%
+  mutate(A12_0_admission_reason_fix = case_when(
+    A12_0_admission_reason_code %in% c("Dịch vụ sản khoa", "Điều trị hoá chất", "Khác") ~ "Khác",
+    A12_0_admission_reason_code %in% c("Điều trị bệnh mạn tính") ~ "Điều trị bệnh mạn tính", 
+    A12_0_admission_reason_code %in% c("Điều trị đợt cấp của bệnh") ~ "Điều trị đợt cấp của bệnh",
+    A12_0_admission_reason_code %in% c("Nhập viện cấp cứu") ~ "Nhập viện cấp cứu", 
+    A12_0_admission_reason_code %in% c("Phẫu thuật/thủ thuật") ~ "Phẫu thuật/Thủ thuật", 
+    TRUE ~ NA_character_))
+```
 
 
 ```{r}
-# STEP 1: Filter by consent
-consent_col <- "Ông/bà có đồng ý tham gia nghiên cứu này không?"
-if (consent_col %in% names(survey_raw)) {
-  survey_clean <- survey_raw |>
-    filter(is.na(.data[[consent_col]]) | str_detect(.data[[consent_col]], "Có"))
-} else {
-  stop("Consent column not found in survey_raw!")
-}
-
-# STEP 2: Vietnamese → English mapping (with error if missing columns)
-vn_to_eng <- c(
-  "Dấu thời gian" = "timestamp",
-  "Ông/bà có đồng ý tham gia nghiên cứu này không?" = "consent",
-  "A1. Địa chỉ của ông/bà (ghi rõ quận/huyện, tỉnh)" = "address",
-  "A2. Giới tính của ông/bà" = "gender",
-  "A3. Năm sinh (năm dương lịch) của ông/bà (Ví dụ: 1975)" = "birth_year",
-  "A4. Trình độ học vấn của ông/bà" = "education",
-  "A5. Tình trạng hôn nhân của ông/bà" = "marital_status",
-  "A6. Tình trạng sống hiện tại của ông/bà" = "living_situation",
-  "A7. Nghề nghiệp của ông/bà" = "occupation",
-  "A8. Thu nhập bình quân hàng tháng của ông/bà" = "monthly_income",
-  "A9. Chi trả viện phí cho đợt điều trị này của ông/bà" = "payment_method",
-  "A10. Bệnh viện mà ông/bà điều trị trong đợt này" = "hospital",
-  "A11. Khoa lâm sàng mà ông/bà đã điều trị trong đợt này" = "department",
-  "A11.1. Tên khoa lâm sàng ông/bà đã điều trị trong đợt này?" = "department_specific",
-  "A12. Lý do nhập viện của ông/bà trong đợt điều trị này là gì?" = "admission_reason",
-  "A13. Số ngày điều trị nội trú trong đợt này của ông/bà (Ví dụ: 5 ngày)" = "length_of_stay",
-  "A14. Ngoài bệnh đang điều trị trong đợt này, ông/bà còn mắc bệnh mạn tính nào khác nữa không? (Ví dụ: Tăng huyết áp, Đái tháo đường, ...)" = "chronic_conditions",
-  "A15. Hiện tại, ông/bà có thẻ bảo hiểm y tế/bảo hiểm khác không?" = "has_insurance",
-  "A16. Ông/bà có sử dụng thẻ bảo hiểm y tế/bảo hiểm y tế khác để thanh toán cho đợt điều trị lần này không?" = "used_insurance",
-  "A17. Tình trạng khi xuất viện của ông/bà" = "discharge_status",
-  "A18. Hiện tại, ông/bà cảm nhận về tình trạng sức khoẻ thể chất của bản thân như thế nào?" = "physical_health_perception",
-  "A19. Hiện tại, ông/bà cảm nhận về tình trạng sức khoẻ tinh thần của bản thân như thế nào?" = "mental_health_perception",
-  "B1. Khi ông/bà có những câu hỏi quan trọng cần trao đổi với bác sĩ, ông/bà có nhận được câu trả lời dễ hiểu không?" = "doctor_communication",
-  "B2. Khi ông/bà có những câu hỏi quan trọng cần trao đổi với điều dưỡng, ông/bà có nhận được câu trả lời dễ hiểu không?" = "nurse_communication",
-  "B3. Trong suốt quá trình điều trị tại bệnh viện, ông/bà có thường xuyên nhận được các câu trả lời thống nhất từ bác sĩ và điều dưỡng không?" = "consistent_communication",
-  "B4. Trong quá trình trao đổi thông tin, bác sĩ có trao đổi rõ ràng với ông/bà không?" = "doctor_clarity",
-  "B5. Trong quá trình điều trị, nếu ông/bà cảm thấy lo lắng, bác sĩ có tư vấn cho ông/bà không?" = "doctor_anxiety_support",
-  "B6. Trong quá trình điều trị, nếu ông/bà cảm thấy lo lắng, điều dưỡng có tư vấn cho ông/bà không?" = "nurse_anxiety_support",
-  "B7. Ông/bà có muốn được tham gia vào quá trình ra quyết định liên quan tới kế hoạch điều trị của mình không?" = "treatment_decision_participation",
-  "B8. Trong quá trình điều trị tại bệnh viện, ông/bà có cảm thấy được nhân viên y tế đối xử với một thái độ tôn trọng không?" = "respectful_treatment",
-  "B9. Ông/bà có chia sẻ với nhân viên y tế những lo lắng của mình không?" = "sharing_concerns",
-  "B10. Trong quá trình điều trị, ông/bà có gặp phải cơn đau không?" = "experienced_pain",
-  "B10.1. Nếu có, ông/bà có nghĩ rằng nhân viên y tế đã cố gắng hết sức để giúp ông/bà kiểm soát cơn đau không?" = "pain_management",
-  "B11. Gia đình/người thân của ông/bà có cơ hội để trao đổi với bác sĩ về tình trạng sức khoẻ và quá trình điều trị của ông/bà không?" = "family_doctor_communication",
-  "B12. Gia đình/người thân của ông/bà có được cung cấp các thông tin cần thiết từ bác sĩ hoặc điều dưỡng để giúp ông/bà hồi phục không?" = "family_information_provision",
-  "B13. Ông/bà có được nhân viên y tế giải thích một cách rõ ràng về cách sử dụng của những loại thuốc ông/bà phải sử dụng ở nhà không?" = "medication_instructions",
-  "B14. Ông/bà có được nhân viên y tế giải thích về những tác dụng phụ cần theo dõi của các loại thuốc mà ông/bà phải sử dụng ở nhà không?" = "medication_side_effects",
-  "B15. Ông/bà có được nhân viên y tế giải thích về những dấu hiệu nguy hiểm liên quan đến tình trạng sức khoẻ hoặc việc điều trị cần theo dõi sau khi ra viện không?" = "discharge_warning_signs",
-  "C1. Ông/bà hãy chấm điểm từ 0 đến 10 để đánh giá chung về trải nghiệm tại bệnh viện mà ông/bà điều trị đợt này (0 điểm là trải nghiệm kém nhất, 10 điểm là trải nghiệm tốt nhất)" = "overall_experience_score",
-  "C2. Ông/bà có tin tưởng vào chất lượng dịch vụ của bệnh viện này hơn các bệnh viện khác không?" = "trust_in_hospital",
-  "C3. Ông/bà có sẵn sàng giới thiệu bệnh viện này cho người thân/bạn bè không?" = "willingness_to_recommend",
-  "C4. Ông/bà cảm thấy mức độ gắn bó của mình với bệnh viện này như thế nào?" = "hospital_loyalty",
-  "C5. Ông/bà có dự định quay lại bệnh viện này khi cần sử dụng dịch vụ y tế trong tương lai không?" = "future_use_intention",
- "C6. Lý do chính khiến ông/bà chọn quay lại bệnh viện này là gì?\r\n(Câu hỏi nhiều lựa chọn)"  = "reasons_for_return"
-)
-
-# Check for missing columns for Vietnamese to English mapping
-missing_vn_cols <- setdiff(names(vn_to_eng), names(survey_clean))
-if (length(missing_vn_cols) > 0) {
-  stop(sprintf("Missing Vietnamese columns for English mapping:\n- %s", paste(missing_vn_cols, collapse = "\n- ")))
-}
-
-# Apply Vietnamese to English renaming
-for (vn_name in names(vn_to_eng)) {
-  eng_name <- vn_to_eng[[vn_name]]
-  names(survey_clean)[names(survey_clean) == vn_name] <- eng_name
-}
-
-# STEP 3: English → Ordered names mapping (for those columns, keep others as-is)
-eng_to_ordered <- c(
-  "address" = "a1_address",
-  "gender" = "a2_gender",
-  "birth_year" = "a3_birth_year",
-  "education" = "a4_education",
-  "marital_status" = "a5_marital_status",
-  "living_situation" = "a6_living_situation",
-  "occupation" = "a7_occupation",
-  "monthly_income" = "a8_monthly_income",
-  "payment_method" = "a9_payment_method",
-  "hospital" = "a10_hospital",
-  "department" = "a11_department",
-  "department_specific" = "a11.1_department_specific",
-  "admission_reason" = "a12_admission_reason",
-  "length_of_stay" = "a13_length_of_stay",
-  "chronic_conditions" = "a14_chronic_conditions",
-  "has_insurance" = "a15_has_insurance",
-  "used_insurance" = "a16_used_insurance",
-  "discharge_status" = "a17_discharge_status",
-  "physical_health_perception" = "a18_physical_health_perception",
-  "mental_health_perception" = "a19_mental_health_perception",
-  "doctor_communication" = "b1_doctor_communication",
-  "nurse_communication" = "b2_nurse_communication",
-  "consistent_communication" = "b3_consistent_communication",
-  "doctor_clarity" = "b4_doctor_clarity",
-  "doctor_anxiety_support" = "b5_doctor_anxiety_support",
-  "nurse_anxiety_support" = "b6_nurse_anxiety_support",
-  "treatment_decision_participation" = "b7_treatment_decision_participation",
-  "respectful_treatment" = "b8_respectful_treatment",
-  "sharing_concerns" = "b9_sharing_concerns",
-  "experienced_pain" = "b10_experienced_pain",
-  "pain_management" = "b10.1_pain_management",
-  "family_doctor_communication" = "b11_family_doctor_communication",
-  "family_information_provision" = "b12_family_information_provision",
-  "medication_instructions" = "b13_medication_instructions",
-  "medication_side_effects" = "b14_medication_side_effects",
-  "discharge_warning_signs" = "b15_discharge_warning_signs",
-  "overall_experience_score" = "c1_overall_experience_score",
-  "trust_in_hospital" = "c2_trust_in_hospital",
-  "willingness_to_recommend" = "c3_willingness_to_recommend",
-  "hospital_loyalty" = "c4_hospital_loyalty",
-  "future_use_intention" = "c5_future_use_intention",
-  "reasons_for_return" = "c6_reasons_for_return"
-)
-
-# Check for missing columns for English to Ordered mapping
-missing_eng_cols <- setdiff(names(eng_to_ordered), names(survey_clean))
-if (length(missing_eng_cols) > 0) {
-  stop(sprintf("Missing English columns for ordered mapping:\n- %s", paste(missing_eng_cols, collapse = "\n- ")))
-}
-
-# Apply English to Ordered renaming
-for (eng_name in names(eng_to_ordered)) {
-  ordered_name <- eng_to_ordered[[eng_name]]
-  names(survey_clean)[names(survey_clean) == eng_name] <- ordered_name
-}
-
-# STEP 4: Set desired column order (keep any extras at end)
-desired_cols <- c(
-  "timestamp",
-  "age", "age_group", "a2_gender", "a4_education", "a5_marital_status", "a6_living_situation",
-  "a7_occupation", "a8_monthly_income",
-  "a10_hospital", "a11_department", "a12_admission_reason", "a13_length_of_stay", "los_category",
-  "a14_chronic_conditions", "a15_has_insurance", "a16_used_insurance", "a9_payment_method",
-  "a17_discharge_status", "a18_physical_health_perception", "a19_mental_health_perception",
-  "b1_doctor_communication", "b2_nurse_communication", "b3_consistent_communication",
-  "b4_doctor_clarity", "b5_doctor_anxiety_support", "b6_nurse_anxiety_support",
-  "b7_treatment_decision_participation", "b8_respectful_treatment", "b9_sharing_concerns",
-  "b10_experienced_pain", "b10.1_pain_management",
-  "b11_family_doctor_communication", "b12_family_information_provision",
-  "b13_medication_instructions", "b14_medication_side_effects", "b15_discharge_warning_signs",
-  "c1_overall_experience_score", "c2_trust_in_hospital", "c3_willingness_to_recommend",
-  "c4_hospital_loyalty", "c5_future_use_intention", "c6_reasons_for_return",
-  "communication_score"
-)
-
-# Only select columns that actually exist (to avoid errors if optional cols missing)
-ordered_cols <- c(desired_cols[desired_cols %in% names(survey_clean)],
-                  setdiff(names(survey_clean), desired_cols))
-survey_clean <- survey_clean[, ordered_cols]
+#write_xlsx(data1_processed, "7_hospital_data_Sep_21st_2025.xlsx")
 ```
-
-
-
-
-```{r, eval = T}
-write_xlsx(survey_clean, "survey_final_cleaned_July_18th_5pm.xlsx")
-```
-
-
-```{r}
-
-```
-
-
-
